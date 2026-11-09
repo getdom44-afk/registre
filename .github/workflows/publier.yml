@@ -1,11 +1,12 @@
 name: Publier une version
 
 # Construit l'image Docker et la publie dans le registre privé GitHub (ghcr.io)
-# à chaque étiquette de version (v1.0.0, v1.1.0…). L'étiquette « stable » suit la dernière version :
-# c'est elle que le serveur utilise, et que Watchtower installe la nuit.
+# chaque fois que la branche « stable » avance (publication d'une version validée).
+# Numéro de version : fichier VERSION. L'image reçoit ce numéro et l'étiquette « stable »,
+# que le serveur utilise et que Watchtower installe la nuit.
 on:
   push:
-    tags: ["v*"]
+    branches: ["stable"]
   workflow_dispatch:
 
 permissions:
@@ -21,11 +22,7 @@ jobs:
       - name: Numéro de version
         id: v
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-          fi
+          echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
@@ -45,4 +42,4 @@ jobs:
           build-args: VERSION=${{ steps.v.outputs.version }}
           tags: |
             ${{ steps.v.outputs.image }}:${{ steps.v.outputs.version }}
-            ${{ startsWith(github.ref, 'refs/tags/v') && format('{0}:stable', steps.v.outputs.image) || '' }}
+            ${{ steps.v.outputs.image }}:stable
