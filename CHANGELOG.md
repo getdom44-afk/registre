@@ -1,5 +1,10 @@
 # Nouveautés
 
+## 1.0.1 — 9 novembre 2026
+
+- **Icônes de compte** : le bouton « Choisir » dans Paramètres fonctionne. L'image était bloquée par la protection du navigateur.
+- **Noms de comptes** : « Livret A Tess » et « Livret A - Tess » sont reconnus comme le même compte. Les comptes concernés reprennent leur famille, leur ordre et leur icône, et un nouvel import ne crée plus de doublon.
+
 ## 1.0.0 — 9 novembre 2026
 
 Première version publiée :

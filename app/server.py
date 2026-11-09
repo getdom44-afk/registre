@@ -131,9 +131,9 @@ def migrate():
     if not _conn.execute("SELECT 1 FROM families LIMIT 1").fetchone():
         for i, name in enumerate(FAMILIES):
             _conn.execute("INSERT INTO families(name, position) VALUES(?, ?)", (name, i))
-    if not _conn.execute("SELECT 1 FROM settings WHERE key = 'layout_v1'").fetchone():
+    if not _conn.execute("SELECT 1 FROM settings WHERE key = 'layout_v2'").fetchone():
         apply_layout()
-        _conn.execute("INSERT INTO settings(key, value) VALUES('layout_v1', '1')")
+        _conn.execute("INSERT INTO settings(key, value) VALUES('layout_v2', '1')")
 
 
 def q(sql, args=()):
@@ -346,9 +346,14 @@ def list_families():
                    GROUP BY f.id ORDER BY f.position, f.id""")
 
 
+def name_key(s):
+    """Nom de compte comparable : sans accents, casse, espaces ni ponctuation (« Livret A - Tess » = « Livret A Tess »)."""
+    return re.sub(r"[^a-z0-9]", "", norm(s))
+
+
 def account_by_name(name):
     for a in rows("SELECT * FROM accounts"):
-        if norm(a["name"]) == norm(name):
+        if name_key(a["name"]) == name_key(name):
             return a
     return None
 
@@ -377,7 +382,7 @@ def family_id(name):
 
 
 def layout_for(name):
-    return next((l for l in LAYOUT if norm(l[0]) == norm(name)), None)
+    return next((l for l in LAYOUT if name_key(l[0]) == name_key(name)), None)
 
 
 def place_account(acc_id, name):
@@ -397,7 +402,7 @@ def apply_layout():
     for (acc_id, name) in _conn.execute("SELECT id, name FROM accounts").fetchall():
         place_account(acc_id, name)
     for l in LAYOUT:
-        if l[5] and not any(norm(r[0]) == norm(l[0]) for r in _conn.execute("SELECT name FROM accounts")):
+        if l[5] and not any(name_key(r[0]) == name_key(l[0]) for r in _conn.execute("SELECT name FROM accounts")):
             acc_id = _conn.execute("INSERT INTO accounts(name, kind, initial, position) VALUES(?, 'courant', 0, 0)", (l[0],)).lastrowid
             place_account(acc_id, l[0])
 

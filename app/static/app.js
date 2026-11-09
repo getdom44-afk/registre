@@ -619,7 +619,8 @@ let iconTarget = null;
 $("#iconFile").addEventListener("change", async ev => {
   const f = ev.target.files[0]; ev.target.value = ""; if (!f || !iconTarget) return;
   try {
-    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(f); });
+    const src = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
     const c = document.createElement("canvas"); c.width = c.height = 64; const g = c.getContext("2d");
     g.fillStyle = "#fff"; g.fillRect(0, 0, 64, 64);
     const r = Math.min(64 / img.width, 64 / img.height), w = img.width * r, h = img.height * r;
