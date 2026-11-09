@@ -1,0 +1,65 @@
+# Registre — fichier d'installation pour le serveur.
+# À placer dans un dossier nommé « registre », puis : docker compose up -d
+# Les mises à jour arrivent toutes seules la nuit (Watchtower), précédées d'une sauvegarde.
+
+services:
+  registre:
+    image: ghcr.io/getdom44-afk/registre:stable
+    container_name: registre        # nom utilisé par le connecteur MCP : ne pas changer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"                 # changez le premier nombre si le port 8080 est déjà pris
+    volumes:
+      - registre-data:/data         # vos comptes (fichier registre.db)
+      - registre-sauvegardes:/backups
+    environment:
+      TZ: Europe/Paris
+      BACKUP_DIR: /backups
+      BACKUP_KEEP: "30"             # nombre de copies quotidiennes conservées
+      # COOKIE_SECURE: "1"          # si l'application est servie en HTTPS (proxy inverse)
+      # RESET_PASSWORD: "1"         # en cas d'oubli : efface le mot de passe au démarrage (puis remettez en commentaire)
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+
+  # Envoi des sauvegardes vers OneDrive, toutes les heures (configuration rclone à faire une fois)
+  registre-onedrive:
+    image: rclone/rclone:1.68
+    container_name: registre-onedrive
+    restart: unless-stopped
+    volumes:
+      - registre-sauvegardes:/backups
+      - ./rclone:/config/rclone
+    environment:
+      TZ: Europe/Paris
+      DEST: "onedrive:Sauvegardes/Registre"     # dossier de votre OneDrive
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          if [ ! -f /config/rclone/rclone.conf ]; then
+            echo "erreur $$(date '+%Y-%m-%d %H:%M') OneDrive n'est pas encore configuré (voir le mode d'emploi)" > /backups/.onedrive-status
+          elif rclone sync /backups "$$DEST" --exclude ".*" --exclude "*.tmp" 2> /tmp/rclone.err; then
+            echo "ok $$(date '+%Y-%m-%d %H:%M')" > /backups/.onedrive-status
+          else
+            echo "erreur $$(date '+%Y-%m-%d %H:%M') $$(tail -n 1 /tmp/rclone.err | cut -c1-200)" > /backups/.onedrive-status
+          fi
+          sleep 3600
+        done
+
+  # Mises à jour automatiques de Registre, chaque nuit à 4 h
+  watchtower:
+    image: nickfedor/watchtower:latest
+    container_name: registre-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.docker/config.json:/config.json:ro    # accès à vos images privées (après « docker login ghcr.io »)
+    environment:
+      TZ: Europe/Paris
+      WATCHTOWER_LABEL_ENABLE: "true"            # ne met à jour que Registre
+      WATCHTOWER_SCHEDULE: "0 0 4 * * *"
+      WATCHTOWER_CLEANUP: "true"
+
+volumes:
+  registre-data:
+  registre-sauvegardes:

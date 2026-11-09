@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registre</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true">
+  <symbol id="i-new" viewBox="0 0 24 24"><rect x="4" y="3" width="13" height="18" rx="1.5"/><path d="M8 8h5M8 12h5"/><circle cx="18" cy="17" r="4.2" class="f"/><path d="M18 15v4M16 17h4" class="w"/></symbol>
+  <symbol id="i-del" viewBox="0 0 24 24"><path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13"/><path d="M10.5 11v6M13.5 11v6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M7.5 12.5l3 3 6-7"/></symbol>
+  <symbol id="i-recon" viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5z"/><path d="M15 4v4h4"/><path d="M8.5 14l2.2 2.2L15.5 11"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="1.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><path d="M8 13h2M12 13h2M16 13h1M8 16.5h2M12 16.5h2"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M12 3v11M7.5 9.5L12 14l4.5-4.5"/><path d="M4 15v4.5h16V15"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 14V3M7.5 7.5L12 3l4.5 4.5"/><path d="M4 15v4.5h16V15"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4z"/><path d="M8 4v5h8V4M7 20v-6h10v6"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/></symbol>
+  <symbol id="i-fc" viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M5 15l4-4 3 3 6-7"/><path d="M15 7h3v3"/><path d="M18 13v2.5M18 17.5v.5" class="d"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.4 1.4 0 0 1 0 2l-6.6 6.6a1.4 1.4 0 0 1-2 0z"/><circle cx="8" cy="8" r="1.6"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 4H5v16h9"/><path d="M10 12h10M16.5 8.5L20 12l-3.5 3.5"/></symbol>
+</svg>
+
+<!-- Connexion -->
+<div id="login" class="login" hidden>
+  <form id="loginForm" class="win login-win" autocomplete="on">
+    <div class="win-title"><span>Registre</span></div>
+    <div class="win-body">
+      <p id="loginIntro">Entrez votre mot de passe pour ouvrir vos comptes.</p>
+      <label class="fld"><span>Mot de passe</span><input type="password" id="loginPw" autocomplete="current-password" required></label>
+      <label class="fld" id="loginPw2Row" hidden><span>Confirmez le mot de passe</span><input type="password" id="loginPw2" autocomplete="new-password"></label>
+      <p class="err" id="loginErr" hidden></p>
+      <div class="btns"><button class="btn primary" id="loginBtn">Ouvrir</button></div>
+    </div>
+  </form>
+</div>
+
+<!-- Application -->
+<div id="app" class="app" hidden>
+  <header class="toolbar" role="toolbar" aria-label="Barre d'outils">
+    <div class="brand">Registre</div>
+    <button class="tb" id="tbNew" title="Nouvelle opération (Ctrl+N)"><svg><use href="#i-new"/></svg><span>Nouvelle</span></button>
+    <button class="tb" id="tbDel" title="Supprimer l'opération sélectionnée (Suppr)"><svg><use href="#i-del"/></svg><span>Supprimer</span></button>
+    <button class="tb" id="tbPoint" title="Pointer / dépointer (Espace)"><svg><use href="#i-check"/></svg><span>Pointer</span></button>
+    <button class="tb" id="tbRecon" title="Rapprochement avec le relevé"><svg><use href="#i-recon"/></svg><span>Rapprocher</span></button>
+    <button class="tb" id="tbClass" title="Classer les opérations sans catégorie"><svg><use href="#i-tag"/></svg><span>Classer</span><b class="badge" id="classBadge" hidden></b></button>
+    <span class="sep"></span>
+    <button class="tb" id="tbDue" title="Échéances à valider"><svg><use href="#i-bell"/></svg><span>À valider</span><b class="badge" id="dueBadge" hidden></b></button>
+    <button class="tb" id="tbSched" title="Échéancier"><svg><use href="#i-cal"/></svg><span>Échéancier</span></button>
+    <button class="tb" id="tbFc" title="Solde prévisionnel à une date"><svg><use href="#i-fc"/></svg><span>Prévision</span></button>
+    <span class="sep"></span>
+    <button class="tb" id="tbImport" title="Importer des fichiers Bank Perfect"><svg><use href="#i-import"/></svg><span>Importer</span></button>
+    <a class="tb" id="tbExport" title="Exporter le compte en CSV" href="#"><svg><use href="#i-export"/></svg><span>Exporter</span></a>
+    <a class="tb" id="tbBackup" title="Télécharger une sauvegarde complète" href="/api/backup"><svg><use href="#i-save"/></svg><span>Sauvegarde</span></a>
+    <button class="tb" id="tbSettings" title="Comptes et paramètres"><svg><use href="#i-gear"/></svg><span>Paramètres</span></button>
+    <span class="grow"></span>
+    <label class="tb-field">Afficher
+      <select id="period">
+        <option value="1m">Mois en cours</option>
+        <option value="3m">3 derniers mois</option>
+        <option value="12m" selected>12 derniers mois</option>
+        <option value="year">Année en cours</option>
+        <option value="lastyear">Année dernière</option>
+        <option value="unpointed">Non pointées</option>
+        <option value="unclassified">À classer</option>
+        <option value="all">Tout</option>
+      </select></label>
+    <input type="search" id="search" class="search" placeholder="Rechercher…" aria-label="Rechercher dans le compte">
+    <button class="tb" id="tbLogout" title="Se déconnecter"><svg><use href="#i-out"/></svg><span>Quitter</span></button>
+  </header>
+
+  <aside class="side" aria-label="Comptes">
+    <div id="accountTree"></div>
+  </aside>
+
+  <main class="main">
+    <div class="acc-head">
+      <img id="accIcon" class="acc-icon big" alt="" hidden>
+      <h1 id="accTitle">—</h1>
+      <div class="acc-sub" id="accSub"></div>
+    </div>
+    <div class="gridwrap" id="gridwrap" tabindex="0" aria-label="Opérations du compte">
+      <table class="grid">
+        <colgroup><col class="c-p"><col class="c-date"><col class="c-mode"><col class="c-tiers"><col class="c-det"><col class="c-cat"><col class="c-sc"><col class="c-amt"><col class="c-amt"><col class="c-sol"></colgroup>
+        <thead><tr><th title="Pointage">P</th><th>Date</th><th>Mode</th><th>Tiers</th><th>Détails</th><th>Catégorie</th><th>Sous-catégorie</th><th class="r">Débit</th><th class="r">Crédit</th><th class="r">Solde</th></tr></thead>
+        <tbody id="gridBody"></tbody>
+      </table>
+    </div>
+
+    <div class="recon" id="reconBar" hidden>
+      <strong>Rapprochement</strong>
+      <label>Solde du relevé <input id="reconStmt" class="amt" inputmode="decimal" placeholder="0,00"></label>
+      <span>Solde pointé : <b id="reconPointed" class="num"></b></span>
+      <span>Écart : <b id="reconDiff" class="num"></b></span>
+      <span class="hint">Pointez (colonne P) les opérations du relevé.</span>
+      <span class="grow"></span>
+      <button class="btn primary" id="reconOk" disabled>Valider le rapprochement</button>
+      <button class="btn" id="reconClose">Fermer</button>
+    </div>
+
+    <form class="entry" id="entry" autocomplete="off">
+      <div class="entry-title" id="entryTitle">Nouvelle opération</div>
+      <label class="fld w-date"><span>Date</span><input type="date" id="fDate" required></label>
+      <label class="fld w-mode"><span>Mode</span><input id="fMode" list="dlModes"></label>
+      <label class="fld w-tiers"><span>Tiers</span><input id="fTiers" list="dlTiers"></label>
+      <label class="fld w-det"><span>Détails</span><input id="fDet"></label>
+      <label class="fld w-cat"><span>Catégorie</span><input id="fCat" list="dlCats"></label>
+      <label class="fld w-sc"><span>Sous-catégorie</span><input id="fSc" list="dlSubs"></label>
+      <label class="fld w-amt"><span>Débit</span><input id="fDeb" class="amt" inputmode="decimal"></label>
+      <label class="fld w-amt"><span>Crédit</span><input id="fCre" class="amt" inputmode="decimal"></label>
+      <label class="fld w-to"><span>Virement vers</span><select id="fTo"></select></label>
+      <div class="entry-btns">
+        <button class="btn primary" id="fSubmit">Ajouter</button>
+        <button type="button" class="btn" id="fCancel">Annuler</button>
+      </div>
+    </form>
+
+    <footer class="status" id="status"></footer>
+  </main>
+</div>
+
+<datalist id="dlModes"></datalist><datalist id="dlTiers"></datalist><datalist id="dlCats"></datalist><datalist id="dlSubs"></datalist>
+
+<!-- Fenêtres -->
+<dialog id="dlgDue" class="win wide">
+  <div class="win-title"><span>Échéances à valider</span><button class="x" data-close aria-label="Fermer">×</button></div>
+  <div class="win-body">
+    <p class="muted" id="dueIntro"></p>
+    <div class="tablewrap"><table class="list" id="dueTable"></table></div>
+    <div class="btns"><button class="btn" id="dueAll">Valider tout</button><button class="btn primary" data-close>Fermer</button></div>
+  </div>
+</dialog>
+
+<dialog id="dlgSched" class="win wide">
+  <div class="win-title"><span>Échéancier</span><button class="x" data-close aria-label="Fermer">×</button></div>
+  <div class="win-body">
+    <form id="schedForm" class="schedform" autocomplete="off">
+      <div class="legend" id="schedFormTitle">Nouvelle échéance</div>
+      <label class="fld"><span>Compte</span><select id="sAcc" required></select></label>
+      <label class="fld"><span>Tiers</span><input id="sTiers" list="dlTiers" required></label>
+      <label class="fld"><span>Détails</span><input id="sDet"></label>
+      <label class="fld"><span>Mode</span><input id="sMode" list="dlModes"></label>
+      <label class="fld"><span>Catégorie</span><input id="sCat" list="dlCats"></label>
+      <label class="fld"><span>Sous-catégorie</span><input id="sSc" list="dlSubs"></label>
+      <label class="fld"><span>Débit</span><input id="sDeb" class="amt" inputmode="decimal"></label>
+      <label class="fld"><span>Crédit</span><input id="sCre" class="amt" inputmode="decimal"></label>
+      <label class="fld"><span>Tous les</span><span class="inline"><input id="sEvery" type="number" min="1" max="366" value="1" class="n"><select id="sUnit"><option value="d">jours</option><option value="w">semaines</option><option value="m" selected>mois</option><option value="y">ans</option></select></span></label>
+      <label class="fld"><span>Prochaine date</span><input type="date" id="sNext" required></label>
+      <label class="fld"><span>Jusqu'au</span><input type="date" id="sEnd"></label>
+      <label class="fld"><span>Virement vers</span><select id="sTo"></select></label>
+      <div class="btns"><button class="btn primary" id="sSubmit">Ajouter</button><button type="button" class="btn" id="sCancel">Annuler</button></div>
+    </form>
+    <div class="sched-filter"><label>Compte <select id="schedFilter"></select></label><span class="muted" id="schedTotals"></span></div>
+    <div class="tablewrap tall"><table class="list" id="schedTable"></table></div>
+  </div>
+</dialog>
+
+<dialog id="dlgImport" class="win wide">
+  <div class="win-title"><span>Importer des relevés</span><button class="x" data-close aria-label="Fermer">×</button></div>
+  <div class="win-body cols">
+    <section>
+      <h2>1. Les comptes (fichiers CSV)</h2>
+      <p class="muted">Sélectionnez en une fois tous les fichiers exportés depuis Bank Perfect. Chaque fichier devient un compte nommé d'après le fichier. Réimporter un fichier ne crée pas de doublons.</p>
+      <input type="file" id="impCsv" accept=".csv" multiple>
+      <div id="impCsvList"></div>
+    </section>
+    <section>
+      <h2>2. L'échéancier (Echeances.bpsched)</h2>
+      <p class="muted">Importez-le après les comptes : les catégories sont retrouvées dans votre historique.</p>
+      <input type="file" id="impBps" accept=".bpsched">
+      <div id="impBpsList"></div>
+    </section>
+    <section>
+      <h2>3. Revolut (relevé CSV)</h2>
+      <p class="muted">Dans l'app Revolut : Compte, puis Relevé, format Excel/CSV. Les opérations arrivent pointées, sans doublons même si les périodes se chevauchent. La catégorie est reprise quand le commerçant est déjà connu ; le reste se range avec « Classer ».</p>
+      <label class="fld"><span>Compte Revolut</span><select id="impRevAcc"></select></label>
+      <input type="file" id="impRev" accept=".csv">
+      <div id="impRevRes"></div>
+    </section>
+  </div>
+</dialog>
+
+<dialog id="dlgSettings" class="win wide">
+  <div class="win-title"><span>Comptes et paramètres</span><button class="x" data-close aria-label="Fermer">×</button></div>
+  <div class="win-body">
+    <h2>Comptes</h2>
+    <div class="tablewrap free"><table class="list" id="accTable"></table></div>
+    <form id="newAccForm" class="row" autocomplete="off">
+      <label class="fld"><span>Nouveau compte</span><input id="naName" required placeholder="Ex. Livret A"></label>
+      <label class="fld"><span>Famille</span><select id="naFam"></select></label>
+      <label class="fld"><span>Solde de départ</span><input id="naInit" class="amt" inputmode="decimal" placeholder="0,00"></label>
+      <button class="btn">Créer</button>
+    </form>
+    <h2>Familles</h2>
+    <div class="row" id="famList"></div>
+    <form id="newFamForm" class="row" autocomplete="off">
+      <label class="fld"><span>Nouvelle famille</span><input id="nfName" required placeholder="Ex. Placements"></label>
+      <button class="btn">Créer</button>
+    </form>
+    <input type="file" id="iconFile" accept="image/*" hidden>
+    <div class="cols">
+      <section>
+        <h2>Échéances</h2>
+        <label class="fld"><span>Proposer à la validation les échéances à venir dans les</span>
+          <select id="setHorizon"><option value="0">échues seulement</option><option value="3">3 jours</option><option value="7">7 jours</option><option value="15">15 jours</option><option value="31">31 jours</option></select></label>
+      </section>
+      <section>
+        <h2>Sauvegarde</h2>
+        <div id="autoBackup" class="stack"></div>
+        <p class="muted">Le bouton « Sauvegarde » de la barre d'outils télécharge aussi un fichier contenant tous vos comptes. Pour revenir à une sauvegarde, choisissez ce fichier ici : vos données actuelles seront remplacées.</p>
+        <input type="file" id="restoreFile" accept=".db">
+      </section>
+      <section>
+        <h2>Mot de passe</h2>
+        <form id="pwForm" autocomplete="off" class="stack">
+          <label class="fld"><span>Mot de passe actuel</span><input type="password" id="pwOld" autocomplete="current-password" required></label>
+          <label class="fld"><span>Nouveau mot de passe</span><input type="password" id="pwNew" autocomplete="new-password" required minlength="8"></label>
+          <div><button class="btn">Changer le mot de passe</button></div>
+        </form>
+      </section>
+    </div>
+    <p class="muted" id="appVersion"></p>
+  </div>
+</dialog>
+
+<dialog id="dlgFc" class="win wide">
+  <div class="win-title"><span>Solde prévisionnel</span><button class="x" data-close aria-label="Fermer">×</button></div>
+  <div class="win-body">
+    <div class="fc-bar">
+      <label class="fld"><span>Prévoir jusqu'au</span><input type="date" id="fcDate"></label>
+      <div class="fc-quick" id="fcQuick"></div>
+    </div>
+    <div class="tablewrap free"><table class="list" id="fcTable"></table></div>
+    <h2 id="fcDetailTitle"></h2>
+    <div class="tablewrap tall"><table class="list" id="fcDetail"></table></div>
+  </div>
+</dialog>
+
+<dialog id="dlgClass" class="win wide">
+  <div class="win-title"><span>Classer les opérations</span><button class="x" data-close aria-label="Fermer">×</button></div>
+  <div class="win-body">
+    <div class="sched-filter"><label>Compte <select id="classAcc"></select></label><span class="muted" id="classIntro"></span></div>
+    <div class="tablewrap tall"><table class="list" id="classTable"></table></div>
+    <p class="muted">La catégorie choisie s'applique à toutes les opérations sans catégorie de ce tiers, et sera reprise automatiquement aux prochains imports.</p>
+  </div>
+</dialog>
+
+<dialog id="dlgConfirm" class="win">
+  <div class="win-title"><span id="cfTitle">Confirmation</span></div>
+  <div class="win-body"><p id="cfText"></p><div class="btns"><button class="btn danger" id="cfOk">Confirmer</button><button class="btn" id="cfNo">Annuler</button></div></div>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+</body>
+</html>

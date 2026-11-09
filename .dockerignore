@@ -1,0 +1,10 @@
+data/
+*.db
+*.db-*
+.git
+.github
+README.md
+CHANGELOG.md
+CLAUDE.md
+docker-compose.yml
+claude_desktop_config.exemple.json

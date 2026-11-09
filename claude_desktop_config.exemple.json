@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "registre": {
+      "command": "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
+      "args": [
+        "-T",
+        "-o", "BatchMode=yes",
+        "UTILISATEUR@ADRESSE-DU-SERVEUR",
+        "docker exec -i registre python /app/mcp_stdio.py"
+      ]
+    }
+  }
+}
