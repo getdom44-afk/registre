@@ -274,3 +274,16 @@ table.list tr.archived td.cnt { color: var(--muted); }
 .status .selinfo { color: var(--accent); }
 .mv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0 10px; }
 #dlgMove { width: min(520px, 94vw); }
+
+/* tri des colonnes, solde pointé, total affiché */
+.grid th[data-sort] { cursor: pointer; user-select: none; }
+.grid th[data-sort]:hover { background: linear-gradient(#ffffff, #dfe6ef); }
+.grid th .arr { display: inline-block; min-width: 1em; margin-left: 3px; font-size: 9px; color: var(--accent); vertical-align: 1px; }
+.grid th.sorted { color: var(--accent); }
+.acc .bal { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.acc .bal small.unp { font-size: 10.5px; color: #b0731a; font-weight: 400; }
+.status .linkbtn i.sw { margin-right: 6px; }
+.status #stUnpointed { color: inherit; text-decoration: none; }
+.status #stUnpointed:hover { text-decoration: underline; }
+.status .shown-tot { color: var(--accent); }
+.tb.on { background: #fff1dc; box-shadow: inset 0 0 0 1px #d98a1c; }

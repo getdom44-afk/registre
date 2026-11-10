@@ -1,5 +1,13 @@
 # Nouveautés
 
+## 1.4.0 — 10 novembre 2026
+
+- **Solde réel dans le menu de gauche.** Le montant principal de chaque compte ne compte que les opérations pointées. Quand il reste des opérations non pointées, le solde qui les inclut s'affiche en petit, en orange, en dessous. Les totaux par famille utilisent aussi les soldes pointés.
+- **Tri par colonne.** Clique sur un en-tête (Date, Tiers, Catégorie, Débit, Crédit…) pour trier ; clique de nouveau pour inverser. Une flèche ▲ / ▼ indique le tri en cours, et il est mémorisé.
+- **Total affiché.** Après une recherche, ou avec le filtre « Non pointées » ou « À classer », la barre d'état affiche le total des lignes, avec le détail des débits et des crédits.
+- **Recherche par catégorie.** Si la recherche est le nom exact d'une catégorie ou d'une sous-catégorie (ou « Catégorie > Sous-catégorie »), seules ses opérations s'affichent, avec leur total.
+- **Bouton « Non pointées »** dans la barre d'outils : il n'affiche que les lignes non pointées, et un second clic revient à l'affichage précédent. Le compteur « N non pointées » de la barre d'état fait la même chose.
+
 ## 1.3.2 — 10 novembre 2026
 
 - **Supprimer une sous-catégorie en rattachant ses opérations à une catégorie.** Dans « Déplacer / fusionner vers », chaque catégorie propose maintenant « (sans sous-catégorie) », y compris sa propre catégorie. Les opérations passent dans la catégorie choisie, sans sous-catégorie, et la sous-catégorie disparaît.

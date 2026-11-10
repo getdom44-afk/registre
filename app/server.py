@@ -484,7 +484,22 @@ def list_operations(acc_id, period="12m", search=""):
               WHERE o.account_id = ?"""
     args = [a["initial"], acc_id]
     where, wargs = [], []
+    exact = None
     if search:
+        # Recherche égale au nom d'une catégorie ou d'une sous-catégorie (ou « Catégorie › Sous-catégorie ») :
+        # on n'affiche que cette catégorie, pour en obtenir le total exact.
+        sq = search.strip()
+        parts = [x.strip() for x in re.split(r"\s*(?:›|>)\s*", sq, maxsplit=1)]
+        if len(parts) == 2 and one("SELECT 1 FROM operations WHERE account_id = ? AND category = ? COLLATE NOCASE AND subcategory = ? COLLATE NOCASE LIMIT 1", (acc_id, parts[0], parts[1])):
+            exact = ("category = ? COLLATE NOCASE AND subcategory = ? COLLATE NOCASE", parts)
+        elif one("SELECT 1 FROM operations WHERE account_id = ? AND category = ? COLLATE NOCASE LIMIT 1", (acc_id, sq)):
+            exact = ("category = ? COLLATE NOCASE", [sq])
+        elif one("SELECT 1 FROM operations WHERE account_id = ? AND subcategory = ? COLLATE NOCASE LIMIT 1", (acc_id, sq)):
+            exact = ("subcategory = ? COLLATE NOCASE", [sq])
+    if exact:
+        where.append(exact[0])
+        wargs += exact[1]
+    elif search:
         like = "%" + search.strip() + "%"
         where.append("(tiers LIKE ? OR details LIKE ? OR category LIKE ? OR subcategory LIKE ? OR mode LIKE ? OR printf('%.2f', abs(amount)/100.0) LIKE ?)")
         wargs += [like] * 5 + ["%" + search.strip().replace(",", ".") + "%"]

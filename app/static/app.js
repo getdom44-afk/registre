@@ -52,7 +52,11 @@ const S = {
   accounts: [], cur: null, ops: [], schedules: [], lists: { categories: [], tiers: [], modes: [] }, settings: { horizon: 7 },
   sel: null, selSet: new Set(), anchor: null, edit: null, period: "12m", search: "", points: { changes: 0, last: null, points: [] }
 };
-try { S.cur = Number(localStorage.getItem("registre.cur")) || null; S.period = localStorage.getItem("registre.period") || "12m"; } catch (e) {}
+S.sort = { key: "date", dir: -1 };
+try {
+  S.cur = Number(localStorage.getItem("registre.cur")) || null; S.period = localStorage.getItem("registre.period") || "12m";
+  const so = JSON.parse(localStorage.getItem("registre.sort") || "null"); if (so && so.key) S.sort = so;
+} catch (e) {}
 const acc = id => S.accounts.find(a => a.id === id);
 const curAcc = () => acc(S.cur);
 
@@ -62,6 +66,7 @@ async function boot() {
   let a;
   try { a = await api("GET", "/api/auth"); } catch (e) { toast("Le serveur ne répond pas"); return; }
   S.version = a.version;
+  renderSortHeads(); $("#tbUnp").classList.toggle("on", S.period === "unpointed");
   if (!a.logged) return showLogin(a.setup);
   await startApp();
 }
@@ -143,12 +148,13 @@ function renderTree() {
   for (const [fid, label] of fams) {
     const list = S.accounts.filter(a => a.family_id === fid && !a.closed);
     if (!list.length) continue;
-    const tot = list.reduce((s, a) => s + a.today_balance, 0);
+    // Solde réel = opérations pointées uniquement ; les non pointées sont indiquées en dessous.
+    const tot = list.reduce((s, a) => s + a.pointed, 0);
     html += `<div class="grp"><div class="grp-h"><span>${esc(label)}</span></div>` +
-      list.map(a => `<button class="acc ${a.id === S.cur ? "sel" : ""}" data-id="${a.id}" title="${esc(a.name)} : ${a.n} opérations · prévu au ${fmtDate(a.cycle_end)} : ${eur(a.forecast)}">
+      list.map(a => `<button class="acc ${a.id === S.cur ? "sel" : ""}" data-id="${a.id}" title="${esc(a.name)} · solde pointé (réel) : ${eur(a.pointed)}${a.unpointed ? ` · avec les ${a.unpointed} non pointées : ${eur(a.today_balance)}` : ""} · prévu au ${fmtDate(a.cycle_end)} : ${eur(a.forecast)}">
         <span class="nm">${iconHtml(a)}<span>${esc(a.name)}</span></span>
-        <span class="num ${cls(a.today_balance)}">${eur(a.today_balance)}</span></button>`).join("") +
-      `<div class="grp-total"><span>Total</span><span class="num ${cls(tot)}">${eur(tot)}</span></div></div>`;
+        <span class="bal"><span class="num ${cls(a.pointed)}">${eur(a.pointed)}</span>${a.unpointed && Math.abs(a.today_balance - a.pointed) > 0.004 ? `<small class="num unp">${eur(a.today_balance)}</small>` : ""}</span></button>`).join("") +
+      `<div class="grp-total" title="Total des soldes pointés"><span>Total</span><span class="num ${cls(tot)}">${eur(tot)}</span></div></div>`;
   }
   const closed = S.accounts.filter(a => a.closed);
   if (closed.length) html += `<div class="grp"><div class="grp-h"><span>Clôturés</span></div>` + closed.map(a => `<button class="acc closed ${a.id === S.cur ? "sel" : ""}" data-id="${a.id}"><span class="nm">${iconHtml(a)}<span>${esc(a.name)}</span></span><span class="num">${eur(a.today_balance)}</span></button>`).join("") + `</div>`;
@@ -216,7 +222,7 @@ function renderGrid() {
         <td class="r num deb">${amt < 0 ? plain(amt) : ""}</td><td class="r num cre">${amt > 0 ? plain(amt) : ""}</td><td></td></tr>`;
     }).join("") + `<tr class="sep-up"><td colspan="9">Opérations</td></tr>`;
   }
-  html += S.ops.length ? S.ops.slice().reverse().map(opRow).join("") :
+  html += S.ops.length ? sortedOps().map(opRow).join("") :
     `<tr class="empty"><td colspan="9">${S.search ? "Aucune opération ne correspond à « " + esc(S.search) + " »." : "Aucune opération sur cette période."}</td></tr>`;
   body.innerHTML = html;
   const present = new Set(S.ops.map(o => o.id));
@@ -224,7 +230,46 @@ function renderGrid() {
   if (S.sel && !present.has(S.sel)) S.sel = null;
 }
 /* Sélection : clic = une ligne ; Ctrl+clic = ajouter / retirer ; Maj+clic (ou Maj+flèches) = plage ; Ctrl+A = tout. */
-const displayIds = () => S.ops.map(o => o.id).reverse();
+const displayIds = () => sortedOps().map(o => o.id);
+/* ---------- tri par colonne (clic sur l'en-tête : croissant / décroissant) ---------- */
+const SORT_KEYS = {
+  pt: o => o.pointage === "-" ? 0 : o.pointage === "P" ? 1 : 2,
+  date: o => o.date, mode: o => o.mode, lib: o => (o.tiers + " " + o.details).trim(),
+  cat: o => o.category, sub: o => o.subcategory,
+  deb: o => o.amount < 0 ? -o.amount : null, cre: o => o.amount > 0 ? o.amount : null, sol: o => o.solde
+};
+const SORT_TEXT = new Set(["mode", "lib", "cat", "sub"]);
+const collator = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+function sortedOps() {
+  const { key, dir } = S.sort, f = SORT_KEYS[key] || SORT_KEYS.date;
+  const chrono = (a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.id - b.id;
+  return S.ops.slice().sort((a, b) => {
+    const x = f(a), y = f(b);
+    if (x === null || x === "" || y === null || y === "") {   // valeurs vides toujours en bas
+      const ex = x === null || x === "", ey = y === null || y === "";
+      if (ex !== ey) return ex ? 1 : -1;
+      return -chrono(a, b);
+    }
+    const c = SORT_TEXT.has(key) ? collator.compare(x, y) : x < y ? -1 : x > y ? 1 : 0;
+    return c ? c * dir : (key === "date" ? chrono(a, b) * dir : -chrono(a, b));
+  });
+}
+function renderSortHeads() {
+  $$("#gridHead th[data-sort]").forEach(th => {
+    const on = th.dataset.sort === S.sort.key;
+    th.classList.toggle("sorted", on);
+    th.querySelector(".arr").textContent = on ? (S.sort.dir > 0 ? "▲" : "▼") : "";
+    th.setAttribute("aria-sort", on ? (S.sort.dir > 0 ? "ascending" : "descending") : "none");
+    th.title = "Trier par " + th.querySelector(".lbl").textContent.toLowerCase() + (on ? (S.sort.dir > 0 ? " (actuellement croissant)" : " (actuellement décroissant)") : "");
+  });
+}
+$("#gridHead").addEventListener("click", ev => {
+  const th = ev.target.closest("th[data-sort]"); if (!th) return;
+  const k = th.dataset.sort;
+  S.sort = S.sort.key === k ? { key: k, dir: -S.sort.dir } : { key: k, dir: SORT_TEXT.has(k) ? 1 : -1 };
+  try { localStorage.setItem("registre.sort", JSON.stringify(S.sort)); } catch (e) {}
+  renderSortHeads(); renderGrid();
+});
 function selRow(id, scroll, mode) {
   if (mode === "toggle") { S.selSet.has(id) ? S.selSet.delete(id) : S.selSet.add(id); S.anchor = id; }
   else if (mode === "range" && S.anchor != null) {
@@ -398,6 +443,15 @@ $("#entry").addEventListener("submit", async ev => {
 });
 
 /* ---------- barre d'état ---------- */
+// Total des lignes affichées : utile après une recherche (catégorie, tiers…) ou un filtre (non pointées, à classer).
+function shownTotal() {
+  if (!S.search && !["unpointed", "unclassified"].includes(S.period)) return "";
+  const deb = S.ops.reduce((t, o) => t + (o.amount < 0 ? o.amount : 0), 0), cre = S.ops.reduce((t, o) => t + (o.amount > 0 ? o.amount : 0), 0);
+  const sq = norm(S.search), [c1, c2] = S.search.split(/\s*(?:›|>)\s*/);
+  const isCat = sq && S.ops.length && (S.ops.every(o => norm(o.category) === sq) || S.ops.every(o => norm(o.subcategory) === sq) || (c2 && S.ops.every(o => norm(o.category) === norm(c1) && norm(o.subcategory) === norm(c2))));
+  return `<span class="shown-tot">${isCat ? `Total « ${esc(S.search)} »` : "Total affiché"} : <b class="num ${cls(deb + cre)}">${eur(deb + cre)}</b>` +
+    (deb && cre ? ` <span class="muted">(débits ${eur(deb)} · crédits ${eur(cre)})</span>` : "") + `</span>`;
+}
 function renderStatus() {
   const a = curAcc();
   if (!a) { $("#status").innerHTML = ""; return; }
@@ -405,15 +459,25 @@ function renderStatus() {
     `<span>Solde au ${fmtDate(todayIso())} : <b class="num ${cls(a.today_balance)}">${eur(a.today_balance)}</b></span>` +
     (a.future ? `<span>Solde final : <b class="num ${cls(a.balance)}">${eur(a.balance)}</b></span>` : "") +
     `<span><i class="sw ok"></i>Pointé : <b class="num ${cls(a.pointed)}">${eur(a.pointed)}</b></span>` +
-    `<span><i class="sw no"></i>${a.unpointed} non pointée${a.unpointed > 1 ? "s" : ""}</span>` +
+    `<span><button class="linkbtn" id="stUnpointed" title="${S.period === "unpointed" ? "Revenir à l'affichage précédent" : "N'afficher que les lignes non pointées"}"><i class="sw no"></i>${a.unpointed} non pointée${a.unpointed > 1 ? "s" : ""}${S.period === "unpointed" ? " · tout afficher" : ""}</button></span>` +
     `<span>Prévu au ${fmtDate(a.cycle_end)}${a.cycle_day ? " (fin de cycle)" : ""} : <b class="num ${cls(a.forecast)}">${eur(a.forecast)}</b>${a.forecast_low < a.forecast ? ` · point bas <b class="num ${cls(a.forecast_low)}">${eur(a.forecast_low)}</b> le ${fmtDate(a.forecast_low_date).slice(0, 5)}` : ""}</span>` +
     (S.selSet.size > 1 ? `<span class="selinfo"><b>${S.selSet.size}</b> sélectionnées · total <b class="num ${cls(selectedOps().reduce((t, o) => t + o.amount, 0))}">${eur(selectedOps().reduce((t, o) => t + o.amount, 0))}</b></span>`
-      : `<span>${S.ops.length} affichée${S.ops.length > 1 ? "s" : ""}</span>`) +
+      : `<span>${S.ops.length} affichée${S.ops.length > 1 ? "s" : ""}</span>` + shownTotal()) +
     `<span class="grow"></span>` +
     (S.points.changes ? `<span class="unsaved">${S.points.changes} modification${S.points.changes > 1 ? "s" : ""} non sauvegardée${S.points.changes > 1 ? "s" : ""} · <button class="linkbtn" id="stRevert">Annuler</button></span>`
       : `<span class="saved">${S.points.last ? "Sauvegardé le " + fmtDate(S.points.last.slice(0, 10)) + " à " + S.points.last.slice(11, 16) : "Aucun point de sauvegarde"}</span>`);
 }
-$("#status").addEventListener("click", ev => { if (ev.target.id === "stRevert") revertChanges(); });
+$("#status").addEventListener("click", ev => {
+  if (ev.target.id === "stRevert") revertChanges();
+  if (ev.target.closest("#stUnpointed")) toggleUnpointed();
+});
+function toggleUnpointed() {
+  if (S.period === "unpointed") S.period = S.prevPeriod && S.prevPeriod !== "unpointed" ? S.prevPeriod : "12m";
+  else { S.prevPeriod = S.period; S.period = "unpointed"; }
+  $("#period").value = S.period; $("#tbUnp").classList.toggle("on", S.period === "unpointed");
+  loadOps(true).catch(fail);
+}
+$("#tbUnp").addEventListener("click", toggleUnpointed);
 
 /* ---------- Sauvegarder (point de sauvegarde) ---------- */
 async function loadPoints() {
@@ -1004,7 +1068,7 @@ $("#tbCloud").addEventListener("click", cloudNow);
 $("#tbSched").addEventListener("click", openSched);
 $("#tbSettings").addEventListener("click", openSettings);
 $("#tbLogout").addEventListener("click", async () => { try { await api("POST", "/api/logout", {}); } catch (e) {} showLogin(false); });
-$("#period").addEventListener("change", () => { S.period = $("#period").value; loadOps(true).catch(fail); });
+$("#period").addEventListener("change", () => { S.period = $("#period").value; $("#tbUnp").classList.toggle("on", S.period === "unpointed"); loadOps(true).catch(fail); });
 let searchT;
 $("#search").addEventListener("input", () => { clearTimeout(searchT); searchT = setTimeout(() => { S.search = $("#search").value.trim(); loadOps(true).catch(fail); }, 250); });
 document.addEventListener("keydown", ev => {
