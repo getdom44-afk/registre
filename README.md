@@ -182,6 +182,21 @@ Quelques exemples de demandes :
 - « Quel sera le solde du CCP le 19 ? »
 - « Combien ai-je dépensé en restaurants ce trimestre, tous comptes confondus ? »
 
+## 5 bis. Accès en HTTPS (https://debian.home:6001)
+
+Le service `registre-https` (Caddy) sert Registre en HTTPS sur le port 6001. Le certificat est émis par une autorité de certification locale, créée au premier démarrage. Il faut l'installer **une fois** sur chaque PC, sinon le navigateur affiche un avertissement.
+
+1. Sur le serveur, récupérer le certificat de l'autorité :
+   `docker cp registre-https:/data/caddy/pki/authorities/local/root.crt ~/registre-ca.crt`
+2. Sur le PC Windows, dans PowerShell :
+   `scp olivier@192.168.1.4:registre-ca.crt $HOME\Downloads\`
+3. Double-cliquer sur `registre-ca.crt`, puis :
+   - « Installer le certificat » › « Ordinateur local » ;
+   - « Placer tous les certificats dans le magasin suivant » › « Autorités de certification racines de confiance ».
+4. Fermer complètement le navigateur, puis ouvrir https://debian.home:6001.
+
+Derrière HTTPS, le cookie de session est automatiquement marqué « Secure ». Le HTTPS est aussi le prérequis des passkeys.
+
 ## 6. Utilisation au quotidien
 
 | Action | Comment |
