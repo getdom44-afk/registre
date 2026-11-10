@@ -1054,7 +1054,8 @@ def cloud_status():
         return None
     ok = line.startswith("ok")
     parts = line.split(" ", 3)
-    return {"ok": ok, "when": " ".join(parts[1:3]) if len(parts) >= 3 else "", "detail": parts[3] if len(parts) > 3 and not ok else ""}
+    return {"ok": ok, "when": " ".join(parts[1:3]) if len(parts) >= 3 else "", "detail": parts[3] if len(parts) > 3 and not ok else "",
+            "pending": os.path.exists(os.path.join(BACKUP_DIR, CLOUD_TRIGGER))}
 
 
 def auto_backup(force=False):
@@ -1096,6 +1097,10 @@ def backup_loop():
 ROUTES = []
 
 
+NOT_TRACKED = {"/api/setup", "/api/login", "/api/logout", "/api/password", "/api/backup/now", "/api/cloud",
+               "/api/points", "/api/points/revert", "/api/restore", "/api/import/bpsched/preview"}
+
+
 def route(method, pattern, public=False):
     rx = re.compile("^" + pattern + "$")
 
@@ -1103,6 +1108,12 @@ def route(method, pattern, public=False):
         ROUTES.append((method, rx, fn, public))
         return fn
     return deco
+
+
+def mark_changed():
+    """Compte les modifications faites depuis le dernier point de sauvegarde (bouton Sauvegarder)."""
+    q("""INSERT INTO settings(key, value) VALUES('changes', '1')
+         ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)""")
 
 
 @route("GET", "/api/auth", public=True)
@@ -1404,30 +1415,117 @@ def r_export(h, body, qs, acc_id):
     h.send_bytes(200, data, "text/csv; charset=utf-8", "Registre - %s - %s.csv" % (safe, today()))
 
 
-def restore_bytes(raw):
+POINTS_DIR = os.path.join(DATA_DIR, "points")
+POINTS_KEEP = int(os.environ.get("POINTS_KEEP", "50"))
+POINT_RE = re.compile(r"^point-(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})(\d{2})\.db$")
+
+
+def list_points():
+    if not os.path.isdir(POINTS_DIR):
+        return []
+    out = []
+    for f in sorted((f for f in os.listdir(POINTS_DIR) if POINT_RE.match(f)), reverse=True):
+        m = POINT_RE.match(f)
+        out.append({"name": f, "when": "%s %s:%s:%s" % m.groups(), "size": os.path.getsize(os.path.join(POINTS_DIR, f))})
+    return out
+
+
+def points_status():
+    pts = list_points()
+    return {"changes": int(setting("changes", "0") or 0), "last": pts[0]["when"] if pts else None, "points": pts[:15]}
+
+
+def make_point():
+    os.makedirs(POINTS_DIR, exist_ok=True)
+    name = "point-%s.db" % dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    path = os.path.join(POINTS_DIR, name)
+    tmp = path + ".tmp"
+    dst = sqlite3.connect(tmp)
+    db().backup(dst)
+    dst.close()
+    os.replace(tmp, path)
+    for old in [p["name"] for p in list_points()][POINTS_KEEP:]:
+        os.remove(os.path.join(POINTS_DIR, old))
+    set_setting("changes", "0")
+    return name
+
+
+def restore_file(path, keep_access=True):
+    """Remplace les données par celles d'un fichier, en conservant le mot de passe et les sessions en cours."""
+    pw = setting("password")
+    sessions = rows("SELECT * FROM sessions")
+    src = sqlite3.connect(path)
+    try:
+        names = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        if not {"accounts", "operations", "schedules", "settings"} <= names:
+            raise ApiError(400, "Ce fichier n'est pas une sauvegarde du Registre")
+        src.backup(db())
+    except sqlite3.DatabaseError:
+        raise ApiError(400, "Ce fichier n'est pas une sauvegarde du Registre")
+    finally:
+        src.close()
+    db().executescript(SCHEMA)
+    migrate()
+    if keep_access:
+        if pw:
+            set_setting("password", pw)
+        for se in sessions:
+            q("INSERT OR IGNORE INTO sessions(token, expires) VALUES(?, ?)", (se["token"], se["expires"]))
+
+
+@route("GET", "/api/points")
+def r_points(h, body, qs):
+    return points_status()
+
+
+@route("POST", "/api/points")
+def r_point_new(h, body, qs):
+    name = make_point()
+    st = points_status()
+    st["created"] = name
+    return st
+
+
+@route("POST", "/api/points/revert")
+def r_point_revert(h, body, qs):
+    pts = list_points()
+    name = str(body.get("name") or (pts[0]["name"] if pts else ""))
+    if not name or not POINT_RE.match(name) or not os.path.isfile(os.path.join(POINTS_DIR, name)):
+        raise ApiError(400, "Aucun point de sauvegarde : cliquez d'abord sur « Sauvegarder »")
+    restore_file(os.path.join(POINTS_DIR, name))
+    set_setting("changes", "0")
+    return points_status()
+
+
+CLOUD_TRIGGER = ".envoyer-maintenant"
+
+
+@route("POST", "/api/cloud")
+def r_cloud(h, body, qs):
+    if not BACKUP_DIR:
+        raise ApiError(400, "Aucun dossier de sauvegarde n'est configuré")
+    auto_backup(force=True)
+    st = backup_status()
+    if st.get("error"):
+        raise ApiError(500, st["error"])
+    with open(os.path.join(BACKUP_DIR, CLOUD_TRIGGER), "w") as fh:
+        fh.write(dt.datetime.now().isoformat())
+    st["requested"] = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return st
+
+
+@route("POST", "/api/restore")
+def r_restore(h, body, qs):
+    raw = base64.b64decode(body.get("data") or "")
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     try:
         with open(path, "wb") as fh:
             fh.write(raw)
-        try:
-            src = sqlite3.connect(path)
-            names = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        except sqlite3.DatabaseError:
-            raise ApiError(400, "Ce fichier n'est pas une sauvegarde du Registre")
-        if not {"accounts", "operations", "schedules", "settings"} <= names:
-            src.close()
-            raise ApiError(400, "Ce fichier n'est pas une sauvegarde du Registre")
-        src.backup(db())
-        src.close()
+        restore_file(path, keep_access=False)
     finally:
         os.unlink(path)
-
-
-@route("POST", "/api/restore")
-def r_restore(h, body, qs):
-    restore_bytes(base64.b64decode(body.get("data") or ""))
-    db().executescript(SCHEMA)
+    set_setting("changes", "0")
     h.set_cookie(new_session())
     return {"ok": True}
 
@@ -1529,6 +1627,8 @@ class Handler(BaseHTTPRequestHandler):
                         if not public and not session_ok(self.cookie()):
                             raise ApiError(401, "Session expirée, reconnectez-vous")
                         res = fn(self, body, qs, *mt.groups())
+                        if method != "GET" and url.path not in NOT_TRACKED:
+                            mark_changed()
                     if not self._sent:
                         self.send_json(200, res)
                     return

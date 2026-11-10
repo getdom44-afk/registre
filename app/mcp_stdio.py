@@ -354,6 +354,8 @@ def call_tool(name, args):
         with R.LOCK:
             R.db()
             res = t[1](args or {})
+            if t[2]:
+                R.mark_changed()
         return {"content": [{"type": "text", "text": json.dumps(res, ensure_ascii=False, indent=1)}], "structuredContent": res}
     except (UserError, R.ApiError) as e:
         return {"content": [{"type": "text", "text": getattr(e, "message", None) or str(e)}], "isError": True}

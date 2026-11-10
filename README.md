@@ -57,7 +57,7 @@ Le service `registre-onedrive` indiquera « non configuré » tant que l'étape 
 
 ## 2. Reprendre vos données Bank Perfect
 
-1. Cliquez sur **Importer**.
+1. Ouvrez **Paramètres**, onglet **Importer / Exporter**, puis cliquez sur **Importer des fichiers…**.
 2. **Les comptes** : sélectionnez vos 6 fichiers CSV en une fois. Chaque compte se range à sa place, avec son icône.
 3. **L'échéancier** : choisissez `Echeances.bpsched`. Vérifiez les correspondances proposées (n° 1 → CCP, n° 3 → CE Joint, n° 0 → Livret A), puis importez.
 
@@ -68,7 +68,7 @@ Si vous réimportez un fichier, les opérations déjà présentes sont ignorées
 Vos comptes Revolut Perso et Revolut Joint sont des porte-monnaie : pas d'échéancier, vous récupérez seulement les dépenses pour les classer.
 
 1. **Exportez le relevé** depuis l'app Revolut : ouvrez le compte, choisissez **Relevé**, format **Excel/CSV**, sur la période voulue.
-2. **Importez-le** : dans Registre, cliquez sur **Importer**, puis **3. Revolut**. Choisissez le compte (Perso ou Joint), puis le fichier. À l'import :
+2. **Importez-le** : dans Registre, ouvrez **Paramètres**, onglet **Importer / Exporter**, puis **Importer des fichiers…**, rubrique **3. Revolut**. Choisissez le compte (Perso ou Joint), puis le fichier. À l'import :
    - les opérations arrivent **déjà pointées**, puisqu'elles viennent de la banque ;
    - les doublons sont ignorés, même si deux relevés se chevauchent ;
    - les opérations en attente, annulées, ou passées par vos coffres d'épargne sont ignorées ;
@@ -121,9 +121,9 @@ Il faut autoriser l'accès à votre OneDrive une seule fois, avec l'outil gratui
    docker compose restart registre-onedrive
    ```
 
-**Vérifier que ça marche.** Dans Registre, ouvrez **Paramètres**, rubrique **Sauvegarde** : elle indique la dernière copie, puis « Envoyé sur OneDrive le … ». Le bouton **Sauvegarder maintenant** fait une copie immédiate ; elle part vers OneDrive au tour suivant, dans l'heure.
+**Vérifier que ça marche.** Cliquez sur **Sauvegarde Cloud** dans la barre d'outils. Une copie est faite et envoyée sur OneDrive dans les secondes qui suivent ; un message confirme l'envoi. L'état est aussi visible dans **Paramètres**, onglet **Sauvegardes**.
 
-**Restaurer.** Récupérez un fichier `registre-AAAA-MM-JJ.db` dans votre OneDrive. Ouvrez **Paramètres**, rubrique **Sauvegarde**, et choisissez ce fichier.
+**Restaurer.** Récupérez un fichier `registre-AAAA-MM-JJ.db` dans votre OneDrive. Ouvrez **Paramètres**, onglet **Sauvegardes**, puis **Restaurer un fichier…**.
 
 ## 5. Connecteur MCP : Claude sur votre PC, Registre sur le serveur
 
@@ -189,9 +189,12 @@ Quelques exemples de demandes :
 | Saisir | Zone **Nouvelle opération**. Un tiers connu remplit sa catégorie. |
 | Virement entre comptes | Champ **Virement vers**. |
 | Modifier / Pointer / Supprimer | Double-clic / clic en colonne **P** ou Espace / Suppr |
-| Échéances | Bouton **À valider** (s'ouvre aussi à la connexion) et **Échéancier**. |
+| Échéances | Bouton **Échéancier** : échéances des 30 prochains jours ; celles à valider sont surlignées, avec **Valider** et **Sauter**. Elles apparaissent aussi en bas de la grille du compte. |
 | Prévision | Bouton **Prévision** : date au choix, point bas, détail par compte. |
-| Rapprocher | Bouton **Rapprocher** : solde du relevé, écart à zéro, puis valider. |
+| Couleurs | Lignes **vertes** : pointées. Lignes **orangées** : non pointées. |
+| Sauvegarder | Bouton **Sauvegarder** (ou Ctrl+S) : crée un point de sauvegarde, comme un commit. La barre d'état indique les modifications faites depuis ; « Annuler » y revient. Les points précédents sont dans **Paramètres**, onglet **Sauvegardes**. |
+| Sauvegarde Cloud | Envoie tout de suite une copie complète sur OneDrive. |
+| Prévision fin de mois | En bas de la liste des comptes (le CCP au 19). Un clic ouvre la prévision détaillée. |
 | Classer | Bouton **Classer** : par commerçant, en un clic. |
 | Comptes, familles, icônes, fin de cycle | **Paramètres** |
 

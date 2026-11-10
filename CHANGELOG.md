@@ -1,6 +1,16 @@
 # Nouveautés
 
-## 1.0.2 — 10 novembre 2026
+## 1.1.0 — 10 novembre 2026
+
+- **Couleurs** : les lignes pointées sont vertes, les lignes non pointées sont orangées.
+- **Bouton Sauvegarder** (ou Ctrl+S) : il crée un point de sauvegarde, comme un commit. La barre d'état indique les modifications faites depuis, et le lien « Annuler » permet d'y revenir. Les 50 derniers points sont dans Paramètres, onglet Sauvegardes.
+- **Bouton Sauvegarde Cloud** : il envoie tout de suite une copie sur OneDrive. Il faut remettre à jour une fois le fichier docker-compose.yml.
+- **Échéancier** : il montre les échéances à venir. Celles à valider y sont surlignées, avec Valider et Sauter.
+- **Prévision fin de mois** : elle s'affiche en bas de la liste des comptes.
+- **Barre d'outils allégée** : les boutons Rapprocher et À valider sont retirés, ainsi que le total général.
+- **Paramètres** : la fenêtre est plus grande et organisée en onglets (Comptes, Importer / Exporter, Sauvegardes, Préférences). L'import et l'export y sont rangés.
+
+## 1.0.2 — 10 novembre 2026 (intégrée à la 1.1.0)
 
 - **Import Revolut corrigé** : les opérations annulées, marquées « RENVOYÉ » dans le relevé en français, ne sont plus comptées. Elles faussaient le solde.
 - **Paiements en attente** : ils sont inscrits sans être pointés, comme dans l'app Revolut. Le solde de Registre est donc celui qu'affiche Revolut. À l'import suivant, un paiement finalisé est pointé, et un paiement annulé est retiré.

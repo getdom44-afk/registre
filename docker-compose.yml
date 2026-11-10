@@ -21,7 +21,8 @@ services:
     labels:
       com.centurylinklabs.watchtower.enable: "true"
 
-  # Envoi des sauvegardes vers OneDrive, toutes les heures (configuration rclone à faire une fois)
+  # Envoi des sauvegardes vers OneDrive : toutes les heures, et aussitôt après le bouton « Sauvegarde Cloud »
+  # (configuration rclone à faire une fois)
   registre-onedrive:
     image: rclone/rclone:1.68
     container_name: registre-onedrive
@@ -35,15 +36,21 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        last=0
         while true; do
-          if [ ! -f /config/rclone/rclone.conf ]; then
-            echo "erreur $$(date '+%Y-%m-%d %H:%M') OneDrive n'est pas encore configuré (voir le mode d'emploi)" > /backups/.onedrive-status
-          elif rclone sync /backups "$$DEST" --exclude ".*" --exclude "*.tmp" 2> /tmp/rclone.err; then
-            echo "ok $$(date '+%Y-%m-%d %H:%M')" > /backups/.onedrive-status
-          else
-            echo "erreur $$(date '+%Y-%m-%d %H:%M') $$(tail -n 1 /tmp/rclone.err | cut -c1-200)" > /backups/.onedrive-status
+          now=$$(date +%s)
+          if [ -f /backups/.envoyer-maintenant ] || [ $$((now - last)) -ge 3600 ]; then
+            rm -f /backups/.envoyer-maintenant
+            if [ ! -f /config/rclone/rclone.conf ]; then
+              echo "erreur $$(date '+%Y-%m-%d %H:%M:%S') OneDrive n'est pas encore configuré (voir le mode d'emploi)" > /backups/.onedrive-status
+            elif rclone sync /backups "$$DEST" --exclude ".*" --exclude "*.tmp" 2> /tmp/rclone.err; then
+              echo "ok $$(date '+%Y-%m-%d %H:%M:%S')" > /backups/.onedrive-status
+            else
+              echo "erreur $$(date '+%Y-%m-%d %H:%M:%S') $$(tail -n 1 /tmp/rclone.err | cut -c1-200)" > /backups/.onedrive-status
+            fi
+            last=$$now
           fi
-          sleep 3600
+          sleep 15
         done
 
   # Mises à jour automatiques de Registre, chaque nuit à 4 h

@@ -50,7 +50,7 @@ const fail = e => toast(e.message || String(e));
 /* ---------- état ---------- */
 const S = {
   accounts: [], cur: null, ops: [], schedules: [], lists: { categories: [], tiers: [], modes: [] }, settings: { horizon: 7 },
-  sel: null, edit: null, period: "12m", search: "", recon: false, dueShown: false
+  sel: null, edit: null, period: "12m", search: "", points: { changes: 0, last: null, points: [] }
 };
 try { S.cur = Number(localStorage.getItem("registre.cur")) || null; S.period = localStorage.getItem("registre.period") || "12m"; } catch (e) {}
 const acc = id => S.accounts.find(a => a.id === id);
@@ -87,11 +87,10 @@ $("#loginForm").addEventListener("submit", async ev => {
 async function startApp() {
   $("#login").hidden = true; $("#app").hidden = false;
   $("#period").value = S.period;
-  await Promise.all([loadAccounts(), loadSchedules(), loadLists(), api("GET", "/api/settings").then(s => { S.settings = s; })]);
+  await Promise.all([loadAccounts(), loadSchedules(), loadLists(), loadPoints(), api("GET", "/api/settings").then(s => { S.settings = s; })]);
   if (!curAcc()) S.cur = (S.accounts.find(a => norm(a.name) === "ccp") || S.accounts.find(a => !a.closed) || {}).id || null;
   await loadOps(true);
   resetEntry();
-  if (!S.dueShown && dueAll().length) { S.dueShown = true; openDue(); }
   if (!S.accounts.length) openImport();
 }
 
@@ -118,34 +117,41 @@ async function loadOps(scrollEnd) {
   if (scrollEnd) { const g = $("#gridwrap"); g.scrollTop = g.scrollHeight; }
 }
 async function refresh(opts = {}) {
-  await Promise.all([loadAccounts(), loadSchedules(), opts.lists ? loadLists() : null]);
+  await Promise.all([loadAccounts(), loadSchedules(), loadPoints(), opts.lists ? loadLists() : null]);
   await loadOps(opts.scrollEnd);
 }
 
 /* ---------- arborescence des comptes ---------- */
 const iconHtml = (a, big) => a && a.icon ? `<img class="acc-icon${big ? " big" : ""}" src="${esc(a.icon)}" alt="">` : `<span class="acc-icon none"></span>`;
 function renderTree() {
-  let html = "", all = 0;
+  let html = "";
   const fams = [...new Map(S.accounts.filter(a => !a.closed).map(a => [a.family_id, a.family_name || "Autres comptes"])).entries()];
   for (const [fid, label] of fams) {
     const list = S.accounts.filter(a => a.family_id === fid && !a.closed);
     if (!list.length) continue;
-    const tot = list.reduce((s, a) => s + a.today_balance, 0); all += tot;
+    const tot = list.reduce((s, a) => s + a.today_balance, 0);
     html += `<div class="grp"><div class="grp-h"><span>${esc(label)}</span></div>` +
       list.map(a => `<button class="acc ${a.id === S.cur ? "sel" : ""}" data-id="${a.id}" title="${esc(a.name)} : ${a.n} opérations · prévu au ${fmtDate(a.cycle_end)} : ${eur(a.forecast)}">
         <span class="nm">${iconHtml(a)}<span>${esc(a.name)}</span></span>
-        <span class="vals"><span class="num ${cls(a.today_balance)}">${eur(a.today_balance)}</span>${a.forecast !== a.today_balance ? `<span class="fc">au ${fmtDate(a.cycle_end).slice(0, 5)} : <span class="${cls(a.forecast)}">${eur(a.forecast)}</span></span>` : ""}</span></button>`).join("") +
+        <span class="num ${cls(a.today_balance)}">${eur(a.today_balance)}</span></button>`).join("") +
       `<div class="grp-total"><span>Total</span><span class="num ${cls(tot)}">${eur(tot)}</span></div></div>`;
   }
   const closed = S.accounts.filter(a => a.closed);
   if (closed.length) html += `<div class="grp"><div class="grp-h"><span>Clôturés</span></div>` + closed.map(a => `<button class="acc closed ${a.id === S.cur ? "sel" : ""}" data-id="${a.id}"><span class="nm">${iconHtml(a)}<span>${esc(a.name)}</span></span><span class="num">${eur(a.today_balance)}</span></button>`).join("") + `</div>`;
-  if (S.accounts.length) html += `<div class="total-all"><span>Total général</span><span class="num ${cls(all)}">${eur(all)}</span></div>`;
-  else html = `<p class="muted side-empty">Aucun compte. Utilisez « Importer » ou « Paramètres » pour commencer.</p>`;
+  if (!S.accounts.length) html = `<p class="muted side-empty">Aucun compte. Ouvrez « Paramètres » pour importer vos données ou créer un compte.</p>`;
   $("#accountTree").innerHTML = html;
+  renderSideFc();
 }
+function renderSideFc() {
+  const list = S.accounts.filter(a => !a.closed);
+  $("#sideFc").innerHTML = !list.length ? "" : `<div class="side-fc-h">Prévision fin de mois</div>` + list.map(a =>
+    `<div class="side-fc-r" title="${esc(a.name)} : solde prévu le ${fmtDate(a.cycle_end)}${a.forecast_count ? ", avec " + a.forecast_count + " échéance" + (a.forecast_count > 1 ? "s" : "") : ""}">
+      <span class="nm">${esc(a.name)}</span><span class="d">${fmtDate(a.cycle_end).slice(0, 5)}</span><span class="num ${cls(a.forecast)}">${eur(a.forecast)}</span></div>`).join("");
+}
+$("#sideFc").addEventListener("click", () => openFc());
 $("#accountTree").addEventListener("click", async ev => {
   const b = ev.target.closest(".acc"); if (!b) return;
-  S.cur = Number(b.dataset.id); S.sel = null; closeRecon(); resetEntry(); renderTree();
+  S.cur = Number(b.dataset.id); S.sel = null; resetEntry(); renderTree();
   await loadOps(true).catch(fail);
 });
 
@@ -156,7 +162,6 @@ function renderHead() {
   $("#accTitle").textContent = a ? a.name : "Aucun compte";
   const ic = $("#accIcon"); if (a && a.icon) { ic.src = a.icon; ic.hidden = false; } else ic.hidden = true;
   $("#accSub").textContent = a ? `${a.n} opérations · solde de départ ${eur(a.initial)}` : "";
-  $("#tbExport").href = a ? `/api/accounts/${a.id}/export` : "#";
 }
 function upcomingFor(id) {
   const lim = new Date(); lim.setDate(lim.getDate() + Number(S.settings.horizon ?? 7));
@@ -165,7 +170,7 @@ function upcomingFor(id) {
 }
 function opRow(o) {
   const t = todayIso(), x = o.transfer_account ? ` <span class="xfer" title="Virement interne">⇄</span>` : "";
-  const c = ["op", o.date > t ? "future" : "", o.pointage === "R" ? "rec" : "", o.id === S.sel ? "sel" : "", o.id === S.edit ? "editing" : ""].join(" ");
+  const c = ["op", o.pointage === "-" ? "pt-no" : "pt-ok", o.date > t ? "future" : "", o.pointage === "R" ? "rec" : "", o.id === S.sel ? "sel" : "", o.id === S.edit ? "editing" : ""].join(" ");
   return `<tr class="${c}" data-id="${o.id}">
     <td class="pt ${o.pointage}" title="${o.pointage === "R" ? "Rapprochée" : o.pointage === "P" ? "Pointée : cliquez pour dépointer" : "Cliquez pour pointer"}">${o.pointage === "-" ? "" : o.pointage}</td>
     <td class="num">${fmtDate(o.date)}</td>
@@ -231,9 +236,9 @@ async function togglePoint(id) {
   try {
     await api("PUT", `/api/operations/${id}`, { pointage: p });
     o.pointage = p;
-    const tr = $(`#gridBody tr[data-id="${id}"] td.pt`);
-    if (tr) { tr.className = "pt " + p; tr.textContent = p === "-" ? "" : p; }
-    await loadAccounts(); renderRecon();
+    const row = $(`#gridBody tr[data-id="${id}"]`);
+    if (row) { const td = row.querySelector("td.pt"); td.className = "pt " + p; td.textContent = p === "-" ? "" : p; row.classList.toggle("pt-ok", p !== "-"); row.classList.toggle("pt-no", p === "-"); }
+    await Promise.all([loadAccounts(), loadPoints()]);
   } catch (e) { fail(e); }
 }
 async function deleteSelected() {
@@ -309,84 +314,86 @@ function renderStatus() {
   $("#status").innerHTML =
     `<span>Solde au ${fmtDate(todayIso())} : <b class="num ${cls(a.today_balance)}">${eur(a.today_balance)}</b></span>` +
     (a.future ? `<span>Solde final : <b class="num ${cls(a.balance)}">${eur(a.balance)}</b></span>` : "") +
-    `<span>Pointé : <b class="num ${cls(a.pointed)}">${eur(a.pointed)}</b></span>` +
-    `<span>Rapproché : <b class="num ${cls(a.reconciled)}">${eur(a.reconciled)}</b></span>` +
+    `<span><i class="sw ok"></i>Pointé : <b class="num ${cls(a.pointed)}">${eur(a.pointed)}</b></span>` +
+    `<span><i class="sw no"></i>${a.unpointed} non pointée${a.unpointed > 1 ? "s" : ""}</span>` +
     `<span>Prévu au ${fmtDate(a.cycle_end)}${a.cycle_day ? " (fin de cycle)" : ""} : <b class="num ${cls(a.forecast)}">${eur(a.forecast)}</b>${a.forecast_low < a.forecast ? ` · point bas <b class="num ${cls(a.forecast_low)}">${eur(a.forecast_low)}</b> le ${fmtDate(a.forecast_low_date).slice(0, 5)}` : ""}</span>` +
-    `<span>${a.unpointed} non pointée${a.unpointed > 1 ? "s" : ""}</span>` +
-    `<span>${S.ops.length} affichée${S.ops.length > 1 ? "s" : ""}</span>`;
+    `<span>${S.ops.length} affichée${S.ops.length > 1 ? "s" : ""}</span>` +
+    `<span class="grow"></span>` +
+    (S.points.changes ? `<span class="unsaved">${S.points.changes} modification${S.points.changes > 1 ? "s" : ""} non sauvegardée${S.points.changes > 1 ? "s" : ""} · <button class="linkbtn" id="stRevert">Annuler</button></span>`
+      : `<span class="saved">${S.points.last ? "Sauvegardé le " + fmtDate(S.points.last.slice(0, 10)) + " à " + S.points.last.slice(11, 16) : "Aucun point de sauvegarde"}</span>`);
+}
+$("#status").addEventListener("click", ev => { if (ev.target.id === "stRevert") revertChanges(); });
+
+/* ---------- Sauvegarder (point de sauvegarde) ---------- */
+async function loadPoints() {
+  try { S.points = await api("GET", "/api/points"); } catch (e) { return; }
+  const b = $("#saveBadge"); b.textContent = S.points.changes; b.hidden = !S.points.changes;
+  $("#tbSave").classList.toggle("dirty", !!S.points.changes);
+  renderStatus();
+}
+async function saveNow() {
+  try {
+    S.points = await api("POST", "/api/points", {});
+    toast("Sauvegardé : point de sauvegarde du " + fmtDate(S.points.last.slice(0, 10)) + " à " + S.points.last.slice(11, 16));
+    await loadPoints(); if ($("#dlgSettings").open) renderPoints();
+  } catch (e) { fail(e); }
+}
+async function revertChanges(name) {
+  const pt = name ? S.points.points.find(p => p.name === name) : S.points.points[0];
+  if (!pt) { toast("Aucun point de sauvegarde : cliquez d'abord sur « Sauvegarder »"); return; }
+  const n = S.points.changes;
+  const txt = name ? `Revenir au point de sauvegarde du ${fmtDate(pt.when.slice(0, 10))} à ${pt.when.slice(11, 16)} ? Tout ce qui a été saisi, modifié ou supprimé depuis sera annulé.`
+    : `Annuler ${n ? "les " + n + " modification" + (n > 1 ? "s" : "") : "les modifications"} faite${n > 1 ? "s" : ""} depuis la dernière sauvegarde (${fmtDate(pt.when.slice(0, 10))} à ${pt.when.slice(11, 16)}) ?`;
+  if (!(await confirmBox(name ? "Revenir à un point de sauvegarde" : "Annuler les modifications", txt))) return;
+  try {
+    await api("POST", "/api/points/revert", { name: pt.name });
+    toast("Données revenues au " + fmtDate(pt.when.slice(0, 10)) + " à " + pt.when.slice(11, 16));
+    resetEntry(); await refresh({ lists: true, scrollEnd: true }); if ($("#dlgSettings").open) { renderAccTable(); renderPoints(); }
+  } catch (e) { fail(e); }
 }
 
-/* ---------- rapprochement ---------- */
-function openRecon() { if (!curAcc()) return; S.recon = true; $("#reconBar").hidden = false; $("#tbRecon").classList.add("on"); renderRecon(); $("#reconStmt").focus(); }
-function closeRecon() { S.recon = false; $("#reconBar").hidden = true; $("#tbRecon").classList.remove("on"); $("#reconStmt").value = ""; }
-function renderRecon() {
-  if (!S.recon) return;
-  const a = curAcc(); if (!a) return;
-  const stmt = parseAmount($("#reconStmt").value);
-  $("#reconPointed").textContent = eur(a.pointed);
-  const diff = isNaN(stmt) ? null : stmt - a.pointed;
-  $("#reconDiff").textContent = diff === null ? "—" : eur(diff);
-  $("#reconDiff").className = "num " + (diff ? "neg" : "pos");
-  $("#reconOk").disabled = diff !== 0;
+/* ---------- Sauvegarde Cloud ---------- */
+let cloudPoll = null;
+async function cloudNow() {
+  const btn = $("#tbCloud"); btn.disabled = true;
+  try {
+    const before = await api("POST", "/api/cloud", {});
+    const prev = before.cloud ? before.cloud.when : null;
+    toast("Copie faite. Envoi vers OneDrive en cours…");
+    let tries = 0;
+    clearInterval(cloudPoll);
+    cloudPoll = setInterval(async () => {
+      tries++;
+      let st; try { st = await api("GET", "/api/backup/status"); } catch (e) { return; }
+      const c = st.cloud;
+      if (c && !c.pending && c.when !== prev) {
+        clearInterval(cloudPoll); btn.disabled = false;
+        toast(c.ok ? "Sauvegarde envoyée sur OneDrive (" + c.when.slice(11, 16) + ")" : "Échec de l'envoi sur OneDrive : " + c.detail);
+        if ($("#dlgSettings").open) renderBackup();
+      } else if (tries >= 18) {
+        clearInterval(cloudPoll); btn.disabled = false;
+        toast(c && /configur/.test(c.detail || "") ? "OneDrive n'est pas encore configuré : la copie est prête sur le serveur." :
+          "Copie prête sur le serveur. Elle partira sur OneDrive au prochain envoi automatique (dans l'heure).");
+      }
+    }, 5000);
+  } catch (e) { btn.disabled = false; fail(e); }
 }
-$("#reconStmt").addEventListener("input", renderRecon);
-$("#reconClose").addEventListener("click", closeRecon);
-$("#reconOk").addEventListener("click", async () => {
-  try { const r = await api("POST", `/api/accounts/${S.cur}/reconcile`, {}); toast(`${r.reconciled} opération${r.reconciled > 1 ? "s" : ""} rapprochée${r.reconciled > 1 ? "s" : ""}`); closeRecon(); await refresh(); }
-  catch (e) { fail(e); }
-});
 
-/* ---------- échéances à valider ---------- */
+/* ---------- échéances ---------- */
 function dueAll() {
   const lim = new Date(); lim.setDate(lim.getDate() + Number(S.settings.horizon ?? 7));
   const l = iso(lim);
   return S.schedules.filter(s => s.next_date <= l);
 }
 function renderDueBadge() { const n = dueAll().length, b = $("#dueBadge"); b.textContent = n; b.hidden = !n; }
-function openDue() { renderDue(); $("#dlgDue").showModal(); }
-function renderDue() {
-  const due = dueAll(), t = todayIso();
-  $("#dueIntro").textContent = due.length ? `${due.length} échéance${due.length > 1 ? "s" : ""} arrive${due.length > 1 ? "nt" : ""} dans les ${S.settings.horizon} jours ou sont dépassées. Ajustez la date ou le montant si besoin, puis validez.` : "Aucune échéance à valider pour le moment.";
-  $("#dueAll").disabled = !due.length;
-  $("#dueTable").innerHTML = `<thead><tr><th>Échéance</th><th>Compte</th><th>Tiers</th><th>Catégorie</th><th>Date de l'opération</th><th class="r">Montant</th><th></th></tr></thead><tbody>` +
-    (due.length ? due.map(s => `<tr data-sid="${s.id}" class="${s.next_date < t ? "late" : ""}">
-      <td class="num">${fmtDate(s.next_date)}${s.next_date < t ? " · en retard" : ""}</td>
-      <td>${esc(s.account_name)}${s.to_account_name ? " → " + esc(s.to_account_name) : ""}</td>
-      <td>${esc(s.tiers)}${s.details ? `<div class="muted">${esc(s.details)}</div>` : ""}</td>
-      <td>${esc([s.category, s.subcategory].filter(Boolean).join(" / "))}</td>
-      <td><input type="date" value="${s.next_date}" data-f="date" aria-label="Date de l'opération"></td>
-      <td class="r"><input class="amt" value="${(s.amount < 0 ? "-" : "") + plain(s.amount)}" data-f="amount" aria-label="Montant"></td>
-      <td class="acts"><button class="btn mini primary" data-act="val">Valider</button> <button class="btn mini" data-act="skip">Sauter</button></td>
-    </tr>`).join("") : `<tr><td colspan="7" class="empty">Rien à valider.</td></tr>`) + "</tbody>";
-}
-async function validateRow(tr) {
-  const sid = Number(tr.dataset.sid);
-  const amount = parseAmount(tr.querySelector('[data-f="amount"]').value);
-  if (isNaN(amount)) throw new Error("Montant illisible");
-  await api("POST", `/api/schedules/${sid}/validate`, { date: tr.querySelector('[data-f="date"]').value, amount });
-}
-$("#dueTable").addEventListener("click", async ev => {
-  const act = ev.target.dataset.act, tr = ev.target.closest("tr[data-sid]"); if (!act || !tr) return;
-  try {
-    if (act === "val") { await validateRow(tr); toast("Échéance validée"); }
-    else { await api("POST", `/api/schedules/${tr.dataset.sid}/skip`, {}); toast("Échéance sautée"); }
-    await refresh(); renderDue();
-  } catch (e) { fail(e); }
-});
-$("#dueAll").addEventListener("click", async () => {
-  const trs = $$("#dueTable tr[data-sid]"); let n = 0;
-  try { for (const tr of trs) { await validateRow(tr); n++; } toast(`${n} échéance${n > 1 ? "s" : ""} validée${n > 1 ? "s" : ""}`); }
-  catch (e) { fail(e); }
-  await refresh(); renderDue();
-});
 
 /* ---------- échéancier ---------- */
 let schedEdit = null;
 function openSched() {
   fillAccSelect($("#sAcc"), S.cur); fillToSelect($("#sTo"), Number($("#sAcc").value));
   const f = $("#schedFilter"); f.innerHTML = `<option value="">Tous les comptes</option>` + S.accounts.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join("");
-  f.value = S.cur || "";
-  resetSched(); renderSched(); $("#dlgSched").showModal();
+  f.value = "";
+  resetSched(); $("#schedForm").hidden = true; renderSched(); $("#dlgSched").showModal();
 }
 function fillAccSelect(sel, value) { sel.innerHTML = S.accounts.filter(a => !a.closed).map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join(""); if (value) sel.value = value; }
 function resetSched() {
@@ -395,25 +402,41 @@ function resetSched() {
   fillToSelect($("#sTo"), Number($("#sAcc").value));
   $("#schedFormTitle").textContent = "Nouvelle échéance"; $("#sSubmit").textContent = "Ajouter";
 }
+function addDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); }
 function renderSched() {
-  const f = Number($("#schedFilter").value) || null, t = todayIso();
-  const list = S.schedules.filter(s => !f || s.account_id === f || s.to_account_id === f);
+  const f = Number($("#schedFilter").value) || null, t = todayIso(), view = $("#schedView").value;
+  const dueLim = addDays(Number(S.settings.horizon ?? 7)), lim = view === "all" ? "9999" : addDays(Number(view));
+  const all = S.schedules.filter(s => !f || s.account_id === f || s.to_account_id === f);
+  const list = all.filter(s => s.next_date <= lim);
   let rec = 0, dep = 0;
-  list.forEach(s => { const v = (f && s.account_id !== f) ? -s.per_month : s.per_month; if (v > 0) rec += v; else dep += v; });
-  $("#schedTotals").innerHTML = list.length ? `Par mois en moyenne : entrées <b class="num pos">${eur(rec)}</b> · sorties <b class="num neg">${eur(-dep)}</b> · reste <b class="num ${cls(rec + dep)}">${eur(rec + dep)}</b>` : "";
-  $("#schedTable").innerHTML = `<thead><tr><th>Prochaine</th><th>Compte</th><th>Tiers</th><th>Catégorie</th><th>Fréquence</th><th>Fin</th><th class="r">Montant</th><th></th></tr></thead><tbody>` +
-    (list.length ? list.map(s => `<tr data-sid="${s.id}" class="${s.id === schedEdit ? "editing" : ""} ${s.next_date < t ? "late" : ""}">
-      <td class="num">${fmtDate(s.next_date)}</td>
+  all.forEach(s => { const v = (f && s.account_id !== f) ? -s.per_month : s.per_month; if (v > 0) rec += v; else dep += v; });
+  $("#schedTotals").innerHTML = all.length ? `${all.length} échéance${all.length > 1 ? "s" : ""} · par mois en moyenne : entrées <b class="num pos">${eur(rec)}</b>, sorties <b class="num neg">${eur(-dep)}</b>` : "";
+  const due = list.filter(s => s.next_date <= dueLim).length;
+  $("#schedIntro").innerHTML = !S.schedules.length ? "" : due
+    ? `<b>${due} échéance${due > 1 ? "s" : ""} à valider</b> (échues ou dans les ${S.settings.horizon} jours) : ajustez la date ou le montant si besoin, puis cliquez sur Valider.`
+    : `Rien à valider pour le moment.`;
+  if (!S.schedules.length) {
+    $("#schedTable").innerHTML = `<tbody><tr><td class="empty">Aucune échéance enregistrée.<br><br>Pour reprendre celles de Bank Perfect : Paramètres › Importer / Exporter › Importer des fichiers, rubrique « L'échéancier ».<br><br>
+      <button class="btn primary" id="schedGoImport">Importer l'échéancier Bank Perfect</button> <button class="btn" id="schedGoNew">Créer une échéance</button></td></tr></tbody>`;
+    return;
+  }
+  $("#schedTable").innerHTML = `<thead><tr><th>Date</th><th>Compte</th><th>Tiers</th><th>Catégorie</th><th>Fréquence</th><th>Fin</th><th class="r">Montant</th><th></th></tr></thead><tbody>` +
+    (list.length ? list.map(s => {
+      const isDue = s.next_date <= dueLim, late = s.next_date < t;
+      return `<tr data-sid="${s.id}" class="${s.id === schedEdit ? "editing" : ""} ${isDue ? "due" : ""} ${late ? "late" : ""}">
+      <td class="num">${isDue ? `<input type="date" value="${s.next_date}" data-f="date" aria-label="Date de l'opération">${late ? `<div class="neg small">en retard</div>` : ""}` : fmtDate(s.next_date)}</td>
       <td>${esc(s.account_name)}${s.to_account_name ? " → " + esc(s.to_account_name) : ""}</td>
       <td>${esc(s.tiers)}${s.details ? ` <span class="muted">· ${esc(s.details)}</span>` : ""}</td>
       <td>${esc([s.category, s.subcategory].filter(Boolean).join(" / "))}</td>
       <td>${freqLabel(s.unit, s.every)}</td>
       <td class="num">${fmtDate(s.end_date)}</td>
-      <td class="r num ${s.amount < 0 ? "neg" : "pos"}">${eur(s.amount)}</td>
-      <td class="acts"><button class="btn mini" data-act="edit">Modifier</button> <button class="btn mini danger" data-act="del">Supprimer</button></td>
-    </tr>`).join("") : `<tr><td colspan="8" class="empty">Aucune échéance.</td></tr>`) + "</tbody>";
+      <td class="r num ${s.amount < 0 ? "neg" : "pos"}">${isDue ? `<input class="amt" value="${(s.amount < 0 ? "-" : "") + plain(s.amount)}" data-f="amount" aria-label="Montant">` : eur(s.amount)}</td>
+      <td class="acts">${isDue ? `<button class="btn mini primary" data-act="val">Valider</button> <button class="btn mini" data-act="skip">Sauter</button> ` : ""}<button class="btn mini" data-act="edit">Modifier</button> <button class="btn mini danger" data-act="del" aria-label="Supprimer">×</button></td>
+    </tr>`; }).join("") : `<tr><td colspan="8" class="empty">Aucune échéance sur cette période. Choisissez « Toutes les échéances » pour voir les suivantes.</td></tr>`) + "</tbody>";
 }
 $("#schedFilter").addEventListener("change", renderSched);
+$("#schedView").addEventListener("change", renderSched);
+$("#schedNew").addEventListener("click", () => { resetSched(); $("#schedForm").hidden = false; renderSched(); $("#sTiers").focus(); });
 $("#sAcc").addEventListener("change", () => fillToSelect($("#sTo"), Number($("#sAcc").value), $("#sTo").value));
 $("#sCat").addEventListener("change", () => fillSubs($("#sCat").value));
 $("#sDeb").addEventListener("input", () => { if ($("#sDeb").value) $("#sCre").value = ""; });
@@ -422,16 +445,26 @@ $("#sTiers").addEventListener("change", () => {
   const t = S.lists.tiers.find(x => norm(x.tiers) === norm($("#sTiers").value)); if (!t || schedEdit) return;
   if (!$("#sCat").value) $("#sCat").value = t.category || ""; if (!$("#sSc").value) $("#sSc").value = t.subcategory || ""; if (!$("#sMode").value) $("#sMode").value = t.mode || "";
 });
-$("#sCancel").addEventListener("click", () => { resetSched(); renderSched(); });
+$("#sCancel").addEventListener("click", () => { resetSched(); $("#schedForm").hidden = true; renderSched(); });
 $("#schedTable").addEventListener("click", async ev => {
+  if (ev.target.id === "schedGoImport") { $("#dlgSched").close(); openImport(); return; }
+  if (ev.target.id === "schedGoNew") { resetSched(); $("#schedForm").hidden = false; $("#sTiers").focus(); return; }
   const act = ev.target.dataset.act, tr = ev.target.closest("tr[data-sid]"); if (!act || !tr) return;
   const s = S.schedules.find(x => x.id === Number(tr.dataset.sid)); if (!s) return;
-  if (act === "del") {
-    if (!(await confirmBox("Supprimer l'échéance", `Supprimer l'échéance « ${s.tiers} » (${eur(s.amount)}, ${freqLabel(s.unit, s.every).toLowerCase()}) ?`))) return;
-    try { await api("DELETE", `/api/schedules/${s.id}`); toast("Échéance supprimée"); await refresh(); renderSched(); } catch (e) { fail(e); }
-    return;
-  }
-  schedEdit = s.id;
+  try {
+    if (act === "val") {
+      const amount = parseAmount(tr.querySelector('[data-f="amount"]').value);
+      if (isNaN(amount)) { toast("Montant illisible"); return; }
+      await api("POST", `/api/schedules/${s.id}/validate`, { date: tr.querySelector('[data-f="date"]').value, amount });
+      toast(`${s.tiers} validée sur ${s.account_name}`); await refresh(); renderSched(); return;
+    }
+    if (act === "skip") { await api("POST", `/api/schedules/${s.id}/skip`, {}); toast(`${s.tiers} : occurrence sautée`); await refresh(); renderSched(); return; }
+    if (act === "del") {
+      if (!(await confirmBox("Supprimer l'échéance", `Supprimer l'échéance « ${s.tiers} » (${eur(s.amount)}, ${freqLabel(s.unit, s.every).toLowerCase()}) ?`))) return;
+      await api("DELETE", `/api/schedules/${s.id}`); toast("Échéance supprimée"); await refresh(); renderSched(); return;
+    }
+  } catch (e) { fail(e); return; }
+  schedEdit = s.id; $("#schedForm").hidden = false;
   $("#sAcc").value = s.account_id; fillToSelect($("#sTo"), s.account_id, s.to_account_id || "");
   $("#sTiers").value = s.tiers; $("#sDet").value = s.details; $("#sMode").value = s.mode; $("#sCat").value = s.category; $("#sSc").value = s.subcategory;
   $("#sDeb").value = s.amount < 0 ? plain(s.amount) : ""; $("#sCre").value = s.amount > 0 ? plain(s.amount) : "";
@@ -449,7 +482,7 @@ $("#schedForm").addEventListener("submit", async ev => {
   try {
     if (schedEdit) { await api("PUT", `/api/schedules/${schedEdit}`, body); toast("Échéance modifiée"); }
     else { await api("POST", "/api/schedules", body); toast("Échéance ajoutée"); }
-    resetSched(); await refresh(); renderSched();
+    resetSched(); $("#schedForm").hidden = true; await refresh(); renderSched();
   } catch (e) { fail(e); }
 });
 
@@ -570,12 +603,35 @@ $("#impBpsList").addEventListener("click", async ev => {
 
 /* ---------- paramètres ---------- */
 let FAMS = [];
-async function openSettings() {
+async function openSettings(tab) {
   FAMS = await api("GET", "/api/families");
-  renderAccTable(); renderFams(); renderBackup();
+  renderAccTable(); renderFams(); renderBackup(); renderPoints(); renderExport();
   $("#appVersion").textContent = "Registre, version " + (S.version || "?");
-  $("#setHorizon").value = String(S.settings.horizon); $("#dlgSettings").showModal();
+  $("#setHorizon").value = String(S.settings.horizon);
+  showTab(typeof tab === "string" ? tab : "comptes");
+  $("#dlgSettings").showModal();
 }
+function showTab(name) {
+  $$("#dlgSettings [role=tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === name));
+  $$("#dlgSettings .tabp").forEach(p => { p.hidden = p.id !== "tab-" + name; });
+}
+$("#dlgSettings .tabs").addEventListener("click", ev => { const b = ev.target.closest("[data-tab]"); if (b) showTab(b.dataset.tab); });
+function renderExport() {
+  const sel = $("#expAcc"), v = sel.value || S.cur;
+  sel.innerHTML = S.accounts.map(a => `<option value="${a.id}">${esc(a.name)} (${a.n} opérations)</option>`).join("");
+  if (v) sel.value = v;
+  $("#expGo").href = sel.value ? `/api/accounts/${sel.value}/export` : "#";
+}
+$("#expAcc").addEventListener("change", renderExport);
+$("#openImport").addEventListener("click", () => { $("#dlgSettings").close(); openImport(); });
+function renderPoints() {
+  const pts = S.points.points || [];
+  $("#pointsTable").innerHTML = `<thead><tr><th>Point de sauvegarde</th><th class="r">Taille</th><th></th></tr></thead><tbody>` +
+    (pts.length ? pts.map((p, i) => `<tr><td>${fmtDate(p.when.slice(0, 10))} à ${p.when.slice(11, 16)}${i === 0 ? ` <span class="muted">· le plus récent${S.points.changes ? `, ${S.points.changes} modification${S.points.changes > 1 ? "s" : ""} depuis` : ""}</span>` : ""}</td>
+      <td class="r muted">${Math.round(p.size / 1024)} Ko</td><td class="acts"><button class="btn mini" data-pt="${esc(p.name)}">Revenir à ce point</button></td></tr>`).join("")
+      : `<tr><td colspan="3" class="empty">Aucun point pour l'instant : cliquez sur « Sauvegarder » dans la barre d'outils.</td></tr>`) + "</tbody>";
+}
+$("#pointsTable").addEventListener("click", ev => { const b = ev.target.closest("[data-pt]"); if (b) revertChanges(b.dataset.pt); });
 function renderFams() {
   $("#naFam").innerHTML = FAMS.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join("");
   $("#famList").innerHTML = FAMS.map((f, i) => `<div class="fam" data-fid="${f.id}"><input data-f="name" value="${esc(f.name)}" aria-label="Nom de la famille">
@@ -587,16 +643,15 @@ async function renderBackup() {
   try {
     const b = await api("GET", "/api/backup/status");
     if (!b.enabled) { el.innerHTML = `<p class="muted">Sauvegarde automatique : non configurée. Le mode d'emploi explique comment la relier à votre OneDrive.</p>`; return; }
-    el.innerHTML = `<p>${b.error ? `<b class="bk-err">${esc(b.error)}</b>` : `<b class="bk-ok">Sauvegarde automatique active</b>`} · une copie par jour, les ${b.keep} dernières sont gardées.</p>
+    el.innerHTML = `<p>${b.error ? `<b class="bk-err">${esc(b.error)}</b>` : `<b class="bk-ok">Sauvegarde automatique active</b>`} : une copie par jour, envoyée sur OneDrive ; les ${b.keep} dernières sont gardées.</p>
       <p class="muted">Dernière copie : ${b.last ? esc(b.last) : "aucune pour l'instant"} · ${b.count} fichier${b.count > 1 ? "s" : ""} dans le dossier.</p>
       <p>${!b.cloud ? `<span class="muted">Envoi vers OneDrive : pas encore de nouvelles du service de synchronisation.</span>` : b.cloud.ok ? `<b class="bk-ok">Envoyé sur OneDrive</b> le ${esc(b.cloud.when)}` : `<b class="bk-err">Échec de l'envoi sur OneDrive</b> le ${esc(b.cloud.when)} : ${esc(b.cloud.detail)}`}</p>
-      <div><button class="btn" id="bkNow">Sauvegarder maintenant</button></div>`;
+      <div><button class="btn primary" id="bkNow">Sauvegarde Cloud maintenant</button></div>`;
   } catch (e) { el.innerHTML = ""; }
 }
 $("#autoBackup").addEventListener("click", async ev => {
   if (ev.target.id !== "bkNow") return;
-  try { await api("POST", "/api/backup/now", {}); toast("Copie enregistrée dans le dossier de sauvegarde"); } catch (e) { fail(e); }
-  renderBackup();
+  await cloudNow(); renderBackup();
 });
 $("#famList").addEventListener("change", async ev => {
   const f = ev.target.closest("[data-fid]"); if (!f) return;
@@ -763,17 +818,16 @@ $$("dialog [data-close]").forEach(b => b.addEventListener("click", () => b.close
 $("#tbNew").addEventListener("click", () => { resetEntry(); $("#fDate").focus(); });
 $("#tbDel").addEventListener("click", deleteSelected);
 $("#tbPoint").addEventListener("click", () => S.sel ? togglePoint(S.sel) : toast("Sélectionnez d'abord une opération"));
-$("#tbRecon").addEventListener("click", () => S.recon ? closeRecon() : openRecon());
-$("#tbDue").addEventListener("click", openDue);
+$("#tbSave").addEventListener("click", saveNow);
+$("#tbCloud").addEventListener("click", cloudNow);
 $("#tbSched").addEventListener("click", openSched);
-$("#tbImport").addEventListener("click", openImport);
 $("#tbSettings").addEventListener("click", openSettings);
-$("#tbExport").addEventListener("click", ev => { if (!curAcc()) { ev.preventDefault(); toast("Aucun compte à exporter"); } });
 $("#tbLogout").addEventListener("click", async () => { try { await api("POST", "/api/logout", {}); } catch (e) {} showLogin(false); });
 $("#period").addEventListener("change", () => { S.period = $("#period").value; loadOps(true).catch(fail); });
 let searchT;
 $("#search").addEventListener("input", () => { clearTimeout(searchT); searchT = setTimeout(() => { S.search = $("#search").value.trim(); loadOps(true).catch(fail); }, 250); });
 document.addEventListener("keydown", ev => {
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (!document.querySelector("dialog[open]")) saveNow(); return; }
   if (document.querySelector("dialog[open]")) return;
   const inField = ev.target.closest("input, select, textarea");
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "n") { ev.preventDefault(); resetEntry(); $("#fDate").focus(); return; }

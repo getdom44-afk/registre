@@ -22,6 +22,8 @@
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/></symbol>
   <symbol id="i-fc" viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M5 15l4-4 3 3 6-7"/><path d="M15 7h3v3"/><path d="M18 13v2.5M18 17.5v.5" class="d"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.4 1.4 0 0 1 0 2l-6.6 6.6a1.4 1.4 0 0 1-2 0z"/><circle cx="8" cy="8" r="1.6"/></symbol>
+  <symbol id="i-commit" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4z"/><path d="M8 4v5h7V4"/><path d="M8.5 15l2.3 2.3 4.7-4.8"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7.5 9.2 4.7 4.7 0 0 0 7 18.5z"/><path d="M12 16.5v-6M9.5 13l2.5-2.5 2.5 2.5"/></symbol>
   <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 4H5v16h9"/><path d="M10 12h10M16.5 8.5L20 12l-3.5 3.5"/></symbol>
 </svg>
 
@@ -46,16 +48,13 @@
     <button class="tb" id="tbNew" title="Nouvelle opération (Ctrl+N)"><svg><use href="#i-new"/></svg><span>Nouvelle</span></button>
     <button class="tb" id="tbDel" title="Supprimer l'opération sélectionnée (Suppr)"><svg><use href="#i-del"/></svg><span>Supprimer</span></button>
     <button class="tb" id="tbPoint" title="Pointer / dépointer (Espace)"><svg><use href="#i-check"/></svg><span>Pointer</span></button>
-    <button class="tb" id="tbRecon" title="Rapprochement avec le relevé"><svg><use href="#i-recon"/></svg><span>Rapprocher</span></button>
     <button class="tb" id="tbClass" title="Classer les opérations sans catégorie"><svg><use href="#i-tag"/></svg><span>Classer</span><b class="badge" id="classBadge" hidden></b></button>
     <span class="sep"></span>
-    <button class="tb" id="tbDue" title="Échéances à valider"><svg><use href="#i-bell"/></svg><span>À valider</span><b class="badge" id="dueBadge" hidden></b></button>
-    <button class="tb" id="tbSched" title="Échéancier"><svg><use href="#i-cal"/></svg><span>Échéancier</span></button>
+    <button class="tb" id="tbSched" title="Échéancier : échéances à venir et à valider"><svg><use href="#i-cal"/></svg><span>Échéancier</span><b class="badge" id="dueBadge" hidden></b></button>
     <button class="tb" id="tbFc" title="Solde prévisionnel à une date"><svg><use href="#i-fc"/></svg><span>Prévision</span></button>
     <span class="sep"></span>
-    <button class="tb" id="tbImport" title="Importer des fichiers Bank Perfect"><svg><use href="#i-import"/></svg><span>Importer</span></button>
-    <a class="tb" id="tbExport" title="Exporter le compte en CSV" href="#"><svg><use href="#i-export"/></svg><span>Exporter</span></a>
-    <a class="tb" id="tbBackup" title="Télécharger une sauvegarde complète" href="/api/backup"><svg><use href="#i-save"/></svg><span>Sauvegarde</span></a>
+    <button class="tb" id="tbSave" title="Sauvegarder : crée un point de sauvegarde de vos saisies (Ctrl+S)"><svg><use href="#i-commit"/></svg><span>Sauvegarder</span><b class="badge" id="saveBadge" hidden></b></button>
+    <button class="tb" id="tbCloud" title="Envoyer une copie de toutes vos données sur OneDrive maintenant"><svg><use href="#i-cloud"/></svg><span>Sauvegarde Cloud</span></button>
     <button class="tb" id="tbSettings" title="Comptes et paramètres"><svg><use href="#i-gear"/></svg><span>Paramètres</span></button>
     <span class="grow"></span>
     <label class="tb-field">Afficher
@@ -75,6 +74,7 @@
 
   <aside class="side" aria-label="Comptes">
     <div id="accountTree"></div>
+    <div class="side-fc" id="sideFc" title="Cliquez pour ouvrir la prévision détaillée"></div>
   </aside>
 
   <main class="main">
@@ -89,17 +89,6 @@
         <thead><tr><th title="Pointage">P</th><th>Date</th><th>Mode</th><th>Tiers</th><th>Détails</th><th>Catégorie</th><th>Sous-catégorie</th><th class="r">Débit</th><th class="r">Crédit</th><th class="r">Solde</th></tr></thead>
         <tbody id="gridBody"></tbody>
       </table>
-    </div>
-
-    <div class="recon" id="reconBar" hidden>
-      <strong>Rapprochement</strong>
-      <label>Solde du relevé <input id="reconStmt" class="amt" inputmode="decimal" placeholder="0,00"></label>
-      <span>Solde pointé : <b id="reconPointed" class="num"></b></span>
-      <span>Écart : <b id="reconDiff" class="num"></b></span>
-      <span class="hint">Pointez (colonne P) les opérations du relevé.</span>
-      <span class="grow"></span>
-      <button class="btn primary" id="reconOk" disabled>Valider le rapprochement</button>
-      <button class="btn" id="reconClose">Fermer</button>
     </div>
 
     <form class="entry" id="entry" autocomplete="off">
@@ -126,19 +115,17 @@
 <datalist id="dlModes"></datalist><datalist id="dlTiers"></datalist><datalist id="dlCats"></datalist><datalist id="dlSubs"></datalist>
 
 <!-- Fenêtres -->
-<dialog id="dlgDue" class="win wide">
-  <div class="win-title"><span>Échéances à valider</span><button class="x" data-close aria-label="Fermer">×</button></div>
-  <div class="win-body">
-    <p class="muted" id="dueIntro"></p>
-    <div class="tablewrap"><table class="list" id="dueTable"></table></div>
-    <div class="btns"><button class="btn" id="dueAll">Valider tout</button><button class="btn primary" data-close>Fermer</button></div>
-  </div>
-</dialog>
-
-<dialog id="dlgSched" class="win wide">
+<dialog id="dlgSched" class="win huge">
   <div class="win-title"><span>Échéancier</span><button class="x" data-close aria-label="Fermer">×</button></div>
   <div class="win-body">
-    <form id="schedForm" class="schedform" autocomplete="off">
+    <div class="sched-filter">
+      <label>Afficher <select id="schedView"><option value="30">Les 30 prochains jours</option><option value="90">Les 3 prochains mois</option><option value="all">Toutes les échéances</option></select></label>
+      <label>Compte <select id="schedFilter"></select></label>
+      <span class="muted grow" id="schedTotals"></span>
+      <button class="btn primary" id="schedNew">Nouvelle échéance</button>
+    </div>
+    <p class="sched-intro" id="schedIntro"></p>
+    <form id="schedForm" class="schedform" autocomplete="off" hidden>
       <div class="legend" id="schedFormTitle">Nouvelle échéance</div>
       <label class="fld"><span>Compte</span><select id="sAcc" required></select></label>
       <label class="fld"><span>Tiers</span><input id="sTiers" list="dlTiers" required></label>
@@ -154,8 +141,7 @@
       <label class="fld"><span>Virement vers</span><select id="sTo"></select></label>
       <div class="btns"><button class="btn primary" id="sSubmit">Ajouter</button><button type="button" class="btn" id="sCancel">Annuler</button></div>
     </form>
-    <div class="sched-filter"><label>Compte <select id="schedFilter"></select></label><span class="muted" id="schedTotals"></span></div>
-    <div class="tablewrap tall"><table class="list" id="schedTable"></table></div>
+    <div class="tablewrap fill"><table class="list" id="schedTable"></table></div>
   </div>
 </dialog>
 
@@ -184,46 +170,85 @@
   </div>
 </dialog>
 
-<dialog id="dlgSettings" class="win wide">
-  <div class="win-title"><span>Comptes et paramètres</span><button class="x" data-close aria-label="Fermer">×</button></div>
+<dialog id="dlgSettings" class="win huge">
+  <div class="win-title"><span>Paramètres</span><button class="x" data-close aria-label="Fermer">×</button></div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="comptes" aria-selected="true">Comptes</button>
+    <button role="tab" data-tab="io" aria-selected="false">Importer / Exporter</button>
+    <button role="tab" data-tab="sauv" aria-selected="false">Sauvegardes</button>
+    <button role="tab" data-tab="pref" aria-selected="false">Préférences</button>
+  </nav>
   <div class="win-body">
-    <h2>Comptes</h2>
-    <div class="tablewrap free"><table class="list" id="accTable"></table></div>
-    <form id="newAccForm" class="row" autocomplete="off">
-      <label class="fld"><span>Nouveau compte</span><input id="naName" required placeholder="Ex. Livret A"></label>
-      <label class="fld"><span>Famille</span><select id="naFam"></select></label>
-      <label class="fld"><span>Solde de départ</span><input id="naInit" class="amt" inputmode="decimal" placeholder="0,00"></label>
-      <button class="btn">Créer</button>
-    </form>
-    <h2>Familles</h2>
-    <div class="row" id="famList"></div>
-    <form id="newFamForm" class="row" autocomplete="off">
-      <label class="fld"><span>Nouvelle famille</span><input id="nfName" required placeholder="Ex. Placements"></label>
-      <button class="btn">Créer</button>
-    </form>
-    <input type="file" id="iconFile" accept="image/*" hidden>
-    <div class="cols">
-      <section>
-        <h2>Échéances</h2>
-        <label class="fld"><span>Proposer à la validation les échéances à venir dans les</span>
-          <select id="setHorizon"><option value="0">échues seulement</option><option value="3">3 jours</option><option value="7">7 jours</option><option value="15">15 jours</option><option value="31">31 jours</option></select></label>
-      </section>
-      <section>
-        <h2>Sauvegarde</h2>
-        <div id="autoBackup" class="stack"></div>
-        <p class="muted">Le bouton « Sauvegarde » de la barre d'outils télécharge aussi un fichier contenant tous vos comptes. Pour revenir à une sauvegarde, choisissez ce fichier ici : vos données actuelles seront remplacées.</p>
-        <input type="file" id="restoreFile" accept=".db">
-      </section>
-      <section>
-        <h2>Mot de passe</h2>
-        <form id="pwForm" autocomplete="off" class="stack">
-          <label class="fld"><span>Mot de passe actuel</span><input type="password" id="pwOld" autocomplete="current-password" required></label>
-          <label class="fld"><span>Nouveau mot de passe</span><input type="password" id="pwNew" autocomplete="new-password" required minlength="8"></label>
-          <div><button class="btn">Changer le mot de passe</button></div>
+    <section class="tabp" id="tab-comptes">
+      <div class="tablewrap fill"><table class="list big" id="accTable"></table></div>
+      <div class="cols">
+        <form id="newAccForm" class="row" autocomplete="off">
+          <label class="fld"><span>Nouveau compte</span><input id="naName" required placeholder="Ex. Livret A"></label>
+          <label class="fld"><span>Famille</span><select id="naFam"></select></label>
+          <label class="fld"><span>Solde de départ</span><input id="naInit" class="amt" inputmode="decimal" placeholder="0,00"></label>
+          <button class="btn">Créer</button>
         </form>
-      </section>
-    </div>
-    <p class="muted" id="appVersion"></p>
+        <div class="stack">
+          <div class="row" id="famList"></div>
+          <form id="newFamForm" class="row" autocomplete="off">
+            <label class="fld"><span>Nouvelle famille</span><input id="nfName" required placeholder="Ex. Placements"></label>
+            <button class="btn">Créer</button>
+          </form>
+        </div>
+      </div>
+      <input type="file" id="iconFile" accept="image/*" hidden>
+    </section>
+
+    <section class="tabp" id="tab-io" hidden>
+      <div class="cols">
+        <section class="card">
+          <h2>Importer</h2>
+          <p class="muted">Exports de Bank Perfect (comptes et échéancier) et relevés Revolut. Réimporter un fichier ne crée jamais de doublons.</p>
+          <div><button class="btn primary" id="openImport">Importer des fichiers…</button></div>
+        </section>
+        <section class="card">
+          <h2>Exporter</h2>
+          <p class="muted">Toutes les opérations d'un compte, au format CSV de Bank Perfect, lisible par Excel ou LibreOffice.</p>
+          <div class="row"><label class="fld"><span>Compte</span><select id="expAcc"></select></label><a class="btn" id="expGo" href="#">Exporter en CSV</a></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="tabp" id="tab-sauv" hidden>
+      <div class="cols">
+        <section class="card">
+          <h2>Points de sauvegarde</h2>
+          <p class="muted">Le bouton « Sauvegarder » de la barre d'outils fige l'état de vos comptes. Vous pouvez revenir à l'un de ces points ; les modifications faites depuis seront perdues.</p>
+          <div class="tablewrap"><table class="list" id="pointsTable"></table></div>
+        </section>
+        <section class="card">
+          <h2>Sauvegarde Cloud (OneDrive)</h2>
+          <div id="autoBackup" class="stack"></div>
+          <h2>Copie sur cet ordinateur</h2>
+          <p class="muted">Télécharge un fichier contenant tous vos comptes. Pour revenir à une copie (ou à un fichier récupéré sur OneDrive), choisissez-la ci-dessous : vos données actuelles seront remplacées.</p>
+          <div class="row"><a class="btn" href="/api/backup" id="dlBackup">Télécharger une copie</a><label class="btn">Restaurer un fichier…<input type="file" id="restoreFile" accept=".db" hidden></label></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="tabp" id="tab-pref" hidden>
+      <div class="cols">
+        <section class="card">
+          <h2>Échéances</h2>
+          <label class="fld"><span>Proposer à la validation les échéances à venir dans les</span>
+            <select id="setHorizon"><option value="0">échues seulement</option><option value="3">3 jours</option><option value="7">7 jours</option><option value="15">15 jours</option><option value="31">31 jours</option></select></label>
+        </section>
+        <section class="card">
+          <h2>Mot de passe</h2>
+          <form id="pwForm" autocomplete="off" class="stack">
+            <label class="fld"><span>Mot de passe actuel</span><input type="password" id="pwOld" autocomplete="current-password" required></label>
+            <label class="fld"><span>Nouveau mot de passe</span><input type="password" id="pwNew" autocomplete="new-password" required minlength="8"></label>
+            <div><button class="btn">Changer le mot de passe</button></div>
+          </form>
+        </section>
+      </div>
+      <p class="muted" id="appVersion"></p>
+    </section>
   </div>
 </dialog>
 
