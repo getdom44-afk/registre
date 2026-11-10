@@ -43,6 +43,7 @@ SCHEMA = """
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS categories (category TEXT NOT NULL, subcategory TEXT NOT NULL DEFAULT '', PRIMARY KEY (category, subcategory));
 CREATE TABLE IF NOT EXISTS families (id INTEGER PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS accounts (
   id INTEGER PRIMARY KEY,
@@ -539,8 +540,10 @@ def delete_operation(op_id):
 
 
 def lists():
-    cats = rows("""SELECT category, subcategory, COUNT(*) AS n FROM operations
-                   WHERE category <> '' GROUP BY category, subcategory ORDER BY category, subcategory""")
+    cats = rows("""SELECT category, subcategory, SUM(n) AS n FROM (
+                     SELECT category, subcategory, COUNT(*) AS n FROM operations WHERE category <> '' GROUP BY category, subcategory
+                     UNION ALL SELECT category, subcategory, 0 FROM categories WHERE category <> '')
+                   GROUP BY category, subcategory ORDER BY category COLLATE NOCASE, subcategory COLLATE NOCASE""")
     tiers = rows("""SELECT tiers, category, subcategory, mode, MAX(date) AS last FROM operations
                     WHERE tiers <> '' AND tiers NOT LIKE 'Transfert %' GROUP BY tiers ORDER BY last DESC LIMIT 1500""")
     modes = [r["mode"] for r in rows("SELECT mode, COUNT(*) n FROM operations WHERE mode <> '' AND mode NOT LIKE 'Chq %' GROUP BY mode ORDER BY n DESC LIMIT 20")]
@@ -1253,6 +1256,79 @@ def r_op_del(h, body, qs, op_id):
     with Tx():
         delete_operation(int(op_id))
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- catégories
+
+def category_tree():
+    """Catégories et sous-catégories utilisées (opérations, échéances) ou créées à l'avance, avec leurs effectifs."""
+    return rows("""SELECT category, subcategory, SUM(ops) AS ops, SUM(sched) AS sched FROM (
+                     SELECT category, subcategory, COUNT(*) AS ops, 0 AS sched FROM operations WHERE category <> '' GROUP BY category, subcategory
+                     UNION ALL SELECT category, subcategory, 0, COUNT(*) FROM schedules WHERE category <> '' GROUP BY category, subcategory
+                     UNION ALL SELECT category, subcategory, 0, 0 FROM categories WHERE category <> '')
+                   GROUP BY category, subcategory ORDER BY category COLLATE NOCASE, subcategory COLLATE NOCASE""")
+
+
+def rename_category(cat, sub, new_cat, new_sub):
+    """Renomme une catégorie entière (sub None) ou une sous-catégorie, dans les opérations, les échéances et la liste.
+    Si le nouveau nom existe déjà, les deux sont fusionnées."""
+    cat, new_cat = str(cat or "").strip(), str(new_cat or "").strip()
+    if not cat or not new_cat:
+        raise ApiError(400, "Indiquez la catégorie")
+    n = 0
+    for table in ("operations", "schedules"):
+        if sub is None:
+            n += q("UPDATE %s SET category = ? WHERE category = ?" % table, (new_cat, cat)).rowcount
+        else:
+            n += q("UPDATE %s SET category = ?, subcategory = ? WHERE category = ? AND subcategory = ?" % table,
+                   (new_cat, str(new_sub or "").strip(), cat, str(sub).strip())).rowcount
+    if sub is None:
+        for r in rows("SELECT subcategory FROM categories WHERE category = ?", (cat,)):
+            q("INSERT OR IGNORE INTO categories(category, subcategory) VALUES(?, ?)", (new_cat, r["subcategory"]))
+        q("DELETE FROM categories WHERE category = ?", (cat,))
+    else:
+        q("DELETE FROM categories WHERE category = ? AND subcategory = ?", (cat, str(sub).strip()))
+        q("INSERT OR IGNORE INTO categories(category, subcategory) VALUES(?, ?)", (new_cat, str(new_sub or "").strip()))
+    return n
+
+
+@route("GET", "/api/categories")
+def r_categories(h, body, qs):
+    return category_tree()
+
+
+@route("POST", "/api/categories")
+def r_category_new(h, body, qs):
+    cat, sub = str(body.get("category") or "").strip(), str(body.get("subcategory") or "").strip()
+    if not cat:
+        raise ApiError(400, "Indiquez un nom de catégorie")
+    q("INSERT OR IGNORE INTO categories(category, subcategory) VALUES(?, ?)", (cat, sub))
+    return {"ok": True}
+
+
+@route("POST", "/api/categories/rename")
+def r_category_rename(h, body, qs):
+    with Tx():
+        n = rename_category(body.get("category"), body.get("subcategory"), body.get("new_category"), body.get("new_subcategory"))
+    return {"updated": n}
+
+
+@route("POST", "/api/categories/delete")
+def r_category_delete(h, body, qs):
+    """Supprime une catégorie (ou une sous-catégorie) : les opérations et échéances concernées redeviennent « à classer »."""
+    cat, sub = str(body.get("category") or "").strip(), body.get("subcategory")
+    with Tx():
+        n = 0
+        for table in ("operations", "schedules"):
+            if sub is None:
+                n += q("UPDATE %s SET category = '', subcategory = '' WHERE category = ?" % table, (cat,)).rowcount
+            else:
+                n += q("UPDATE %s SET subcategory = '' WHERE category = ? AND subcategory = ?" % table, (cat, str(sub))).rowcount
+        if sub is None:
+            q("DELETE FROM categories WHERE category = ?", (cat,))
+        else:
+            q("DELETE FROM categories WHERE category = ? AND subcategory = ?", (cat, str(sub)))
+    return {"updated": n}
 
 
 @route("GET", "/api/families")

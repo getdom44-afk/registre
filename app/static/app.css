@@ -145,7 +145,7 @@ dialog::backdrop { background: rgb(30 40 60 / .3); }
 .acc-sub { color: var(--muted); font-size: 12.5px; }
 .gridwrap { overflow: auto; background: var(--panel); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); min-height: 0; }
 table.grid { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; min-width: 980px; }
-.c-p { width: 30px; } .c-date { width: 98px; } .c-mode { width: 128px; } .c-tiers { width: 22%; } .c-det { width: 16%; }
+.c-p { width: 30px; } .c-date { width: 98px; } .c-mode { width: 128px; } .c-lib { width: 34%; }
 .c-cat { width: 12%; } .c-sc { width: 14%; } .c-amt { width: 96px; } .c-sol { width: 106px; }
 .grid th { position: sticky; top: 0; z-index: 1; background: linear-gradient(#f9fafc, #e7ebf0); border-bottom: 1px solid var(--line); border-right: 1px solid var(--line-soft); padding: 4px 6px; text-align: left; font-weight: 600; font-size: 12px; white-space: nowrap; }
 .grid td { padding: 3px 6px; border-bottom: 1px solid #edf1f5; border-right: 1px solid #f0f3f6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -254,3 +254,15 @@ table.list td.lowc { color: var(--muted); font-size: 12px; }
 .icon-cell { display: flex; align-items: center; gap: 6px; }
 .bk-ok { color: var(--credit); } .bk-err { color: var(--debit); }
 .tablewrap.free { max-height: none; }
+
+/* ---------- libellé fusionné, catégories ---------- */
+.grid td.lib .det { color: var(--muted); }
+.grid td.lib .det::before { content: " · "; }
+.cats-bar { align-items: flex-end; }
+table.list tr.cat-h td { background: var(--chrome-2) !important; font-weight: 700; border-top: 2px solid var(--line); }
+table.list tr.cat-h input { font-weight: 700; }
+table.list td.sub-indent { padding-left: 28px; }
+table.list .cnt { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.side-fc .big-fc { padding: 2px 12px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.side-fc .big-fc .num { font-size: 16px; font-weight: 700; }
+.side-fc .fc-sub { padding: 0 12px; font-size: 11.5px; color: var(--muted); }

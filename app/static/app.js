@@ -114,7 +114,7 @@ async function loadOps(scrollEnd) {
   const qs = new URLSearchParams({ period: S.period, q: S.search });
   S.ops = await api("GET", `/api/accounts/${S.cur}/operations?${qs}`);
   renderHead(); renderGrid(); renderStatus();
-  if (scrollEnd) { const g = $("#gridwrap"); g.scrollTop = g.scrollHeight; }
+  if (scrollEnd) $("#gridwrap").scrollTop = 0;
 }
 async function refresh(opts = {}) {
   await Promise.all([loadAccounts(), loadSchedules(), loadPoints(), opts.lists ? loadLists() : null]);
@@ -143,12 +143,14 @@ function renderTree() {
   renderSideFc();
 }
 function renderSideFc() {
-  const list = S.accounts.filter(a => !a.closed);
-  $("#sideFc").innerHTML = !list.length ? "" : `<div class="side-fc-h">Prévision fin de mois</div>` + list.map(a =>
-    `<div class="side-fc-r" title="${esc(a.name)} : solde prévu le ${fmtDate(a.cycle_end)}${a.forecast_count ? ", avec " + a.forecast_count + " échéance" + (a.forecast_count > 1 ? "s" : "") : ""}">
-      <span class="nm">${esc(a.name)}</span><span class="d">${fmtDate(a.cycle_end).slice(0, 5)}</span><span class="num ${cls(a.forecast)}">${eur(a.forecast)}</span></div>`).join("");
+  // Prévision affichée pour le compte principal : celui qui a une fin de cycle (CCP, le 19), sinon le CCP.
+  const a = S.accounts.find(x => !x.closed && x.cycle_day) || S.accounts.find(x => norm(x.name) === "ccp");
+  $("#sideFc").innerHTML = !a ? "" : `<div class="side-fc-h">Prévision fin de mois · ${esc(a.name)}</div>
+    <div class="big-fc"><span>au ${fmtDate(a.cycle_end)}</span><span class="num ${cls(a.forecast)}">${eur(a.forecast)}</span></div>
+    <div class="fc-sub">${a.forecast_count ? a.forecast_count + " échéance" + (a.forecast_count > 1 ? "s" : "") + " d'ici là" : "Aucune échéance d'ici là"}${a.forecast_low < Math.min(a.forecast, a.today_balance) ? ` · point bas ${eur(a.forecast_low)} le ${fmtDate(a.forecast_low_date).slice(0, 5)}` : ""}</div>`;
+  $("#sideFc").dataset.acc = a ? a.id : "";
 }
-$("#sideFc").addEventListener("click", () => openFc());
+$("#sideFc").addEventListener("click", () => { const id = Number($("#sideFc").dataset.acc); if (id) { S.cur = id; renderTree(); loadOps(true).catch(fail); } openFc(); });
 $("#accountTree").addEventListener("click", async ev => {
   const b = ev.target.closest(".acc"); if (!b) return;
   S.cur = Number(b.dataset.id); S.sel = null; resetEntry(); renderTree();
@@ -175,8 +177,7 @@ function opRow(o) {
     <td class="pt ${o.pointage}" title="${o.pointage === "R" ? "Rapprochée" : o.pointage === "P" ? "Pointée : cliquez pour dépointer" : "Cliquez pour pointer"}">${o.pointage === "-" ? "" : o.pointage}</td>
     <td class="num">${fmtDate(o.date)}</td>
     <td title="${esc(o.mode)}">${esc(o.mode)}</td>
-    <td title="${esc(o.tiers)}">${esc(o.tiers)}${x}</td>
-    <td title="${esc(o.details)}">${esc(o.details)}</td>
+    <td class="lib" title="${esc([o.tiers, o.details].filter(Boolean).join(" · "))}">${esc(o.tiers)}${o.details ? `<span class="det">${esc(o.details)}</span>` : ""}${x}</td>
     <td title="${esc(o.category)}">${esc(o.category)}</td>
     <td title="${esc(o.subcategory)}">${esc(o.subcategory)}</td>
     <td class="r num deb">${o.amount < 0 ? plain(o.amount) : ""}</td>
@@ -186,22 +187,23 @@ function opRow(o) {
 }
 function renderGrid() {
   const body = $("#gridBody");
-  if (!S.cur) { body.innerHTML = `<tr class="empty"><td colspan="10">Aucun compte. Cliquez sur « Importer » pour reprendre vos données Bank Perfect, ou créez un compte dans « Paramètres ».</td></tr>`; return; }
-  let html = S.ops.length ? S.ops.map(opRow).join("") :
-    `<tr class="empty"><td colspan="10">${S.search ? "Aucune opération ne correspond à « " + esc(S.search) + " »." : "Aucune opération sur cette période."}</td></tr>`;
+  if (!S.cur) { body.innerHTML = `<tr class="empty"><td colspan="9">Aucun compte. Cliquez sur « Importer » pour reprendre vos données Bank Perfect, ou créez un compte dans « Paramètres ».</td></tr>`; return; }
+  let html = "";
   const up = S.search ? [] : upcomingFor(S.cur);
   if (up.length) {
     const t = todayIso();
-    html += `<tr class="sep-up"><td colspan="10">Échéances à valider</td></tr>` + up.map(s => {
+    html += `<tr class="sep-up"><td colspan="9">Échéances à valider</td></tr>` + up.slice().reverse().map(s => {
       const amt = s.account_id === S.cur ? s.amount : -s.amount;
       const tiers = s.to_account_id ? (s.account_id === S.cur ? "Vers " + s.to_account_name : "Depuis " + s.account_name) + " · " + s.tiers : s.tiers;
       return `<tr class="up" data-sid="${s.id}">
         <td class="pt">${s.next_date < t ? "!" : ""}</td><td class="num">${fmtDate(s.next_date)}</td><td>${esc(s.mode)}</td>
-        <td title="${esc(tiers)}">${esc(tiers)}</td><td class="acts" colspan="1"><span class="up-acts">${s.account_id === S.cur ? `<button class="btn mini primary" data-act="val">Valider</button><button class="btn mini" data-act="skip">Sauter</button>` : `<span class="muted">sur ${esc(s.account_name)}</span>`}</span></td>
+        <td class="lib" title="${esc(tiers)}"><span class="up-acts">${s.account_id === S.cur ? `<button class="btn mini primary" data-act="val">Valider</button><button class="btn mini" data-act="skip">Sauter</button>` : `<span class="muted">sur ${esc(s.account_name)}</span>`}</span> ${esc(tiers)}</td>
         <td>${esc(s.category)}</td><td>${esc(s.subcategory)}</td>
         <td class="r num deb">${amt < 0 ? plain(amt) : ""}</td><td class="r num cre">${amt > 0 ? plain(amt) : ""}</td><td></td></tr>`;
-    }).join("");
+    }).join("") + `<tr class="sep-up"><td colspan="9">Opérations</td></tr>`;
   }
+  html += S.ops.length ? S.ops.slice().reverse().map(opRow).join("") :
+    `<tr class="empty"><td colspan="9">${S.search ? "Aucune opération ne correspond à « " + esc(S.search) + " »." : "Aucune opération sur cette période."}</td></tr>`;
   body.innerHTML = html;
 }
 function selRow(id, scroll) {
@@ -605,7 +607,7 @@ $("#impBpsList").addEventListener("click", async ev => {
 let FAMS = [];
 async function openSettings(tab) {
   FAMS = await api("GET", "/api/families");
-  renderAccTable(); renderFams(); renderBackup(); renderPoints(); renderExport();
+  renderAccTable(); renderFams(); renderBackup(); renderPoints(); renderExport(); loadCats().catch(fail);
   $("#appVersion").textContent = "Registre, version " + (S.version || "?");
   $("#setHorizon").value = String(S.settings.horizon);
   showTab(typeof tab === "string" ? tab : "comptes");
@@ -616,6 +618,54 @@ function showTab(name) {
   $$("#dlgSettings .tabp").forEach(p => { p.hidden = p.id !== "tab-" + name; });
 }
 $("#dlgSettings .tabs").addEventListener("click", ev => { const b = ev.target.closest("[data-tab]"); if (b) showTab(b.dataset.tab); });
+let CATS = [];
+async function loadCats() { CATS = await api("GET", "/api/categories"); renderCats(); }
+function renderCats() {
+  const f = norm($("#catSearch").value), groups = new Map();
+  for (const c of CATS) { if (!groups.has(c.category)) groups.set(c.category, []); groups.get(c.category).push(c); }
+  const catNames = [...groups.keys()];
+  let html = `<thead><tr><th>Catégorie / sous-catégorie</th><th>Déplacer vers la catégorie</th><th class="r">Opérations</th><th class="r">Échéances</th><th></th></tr></thead><tbody>`, shown = 0;
+  for (const [cat, subs] of groups) {
+    const hit = !f || norm(cat).includes(f) || subs.some(x => norm(x.subcategory).includes(f));
+    if (!hit) continue;
+    const ops = subs.reduce((s, x) => s + x.ops, 0), sch = subs.reduce((s, x) => s + x.sched, 0);
+    html += `<tr class="cat-h" data-cat="${esc(cat)}"><td><input data-f="cat" value="${esc(cat)}" aria-label="Nom de la catégorie"></td><td></td>
+      <td class="r cnt">${ops}</td><td class="r cnt">${sch}</td><td class="acts"><button class="btn mini" data-act="addsub">+ Sous-catégorie</button> <button class="btn mini danger" data-act="delcat">Supprimer</button></td></tr>`;
+    for (const x of subs.filter(x => x.subcategory && (!f || norm(cat).includes(f) || norm(x.subcategory).includes(f)))) {
+      shown++;
+      html += `<tr data-cat="${esc(cat)}" data-sub="${esc(x.subcategory)}"><td class="sub-indent"><input data-f="sub" value="${esc(x.subcategory)}" aria-label="Nom de la sous-catégorie"></td>
+        <td><select data-f="move" aria-label="Déplacer vers"><option value="">—</option>${catNames.filter(n => n !== cat).map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select></td>
+        <td class="r cnt">${x.ops}</td><td class="r cnt">${x.sched}</td><td class="acts"><button class="btn mini danger" data-act="delsub">Supprimer</button></td></tr>`;
+    }
+  }
+  $("#catTable").innerHTML = html + "</tbody>";
+  $("#catIntro").textContent = `${catNames.length} catégories · ${CATS.filter(c => c.subcategory).length} sous-catégories`;
+}
+async function catAction(body, msg) {
+  try { const r = await api("POST", "/api/categories/rename", body); toast(msg + (r.updated ? ` (${r.updated} ligne${r.updated > 1 ? "s" : ""} mise${r.updated > 1 ? "s" : ""} à jour)` : "")); await loadCats(); await refresh({ lists: true }); }
+  catch (e) { fail(e); await loadCats(); }
+}
+$("#catSearch").addEventListener("input", renderCats);
+$("#catTable").addEventListener("change", ev => {
+  const tr = ev.target.closest("tr[data-cat]"); if (!tr) return;
+  const cat = tr.dataset.cat, sub = tr.dataset.sub, f = ev.target.dataset.f, v = ev.target.value.trim();
+  if (f === "cat" && v && v !== cat) catAction({ category: cat, subcategory: null, new_category: v }, CATS.some(c => c.category === v) ? `« ${cat} » fusionnée dans « ${v} »` : `Catégorie renommée en « ${v} »`);
+  if (f === "sub" && v !== sub) catAction({ category: cat, subcategory: sub, new_category: cat, new_subcategory: v }, `Sous-catégorie renommée en « ${v || "(aucune)"} »`);
+  if (f === "move" && v) catAction({ category: cat, subcategory: sub, new_category: v, new_subcategory: sub }, `« ${sub} » déplacée dans « ${v} »`);
+});
+$("#catTable").addEventListener("click", async ev => {
+  const act = ev.target.dataset.act, tr = ev.target.closest("tr[data-cat]"); if (!act || !tr) return;
+  const cat = tr.dataset.cat, sub = tr.dataset.sub;
+  if (act === "addsub") { $("#cnCat").value = cat; $("#cnSub").value = ""; $("#cnSub").focus(); return; }
+  const n = CATS.filter(c => c.category === cat && (act === "delcat" || c.subcategory === sub)).reduce((s, c) => s + c.ops + c.sched, 0);
+  const what = act === "delcat" ? `la catégorie « ${cat} » et ses sous-catégories` : `la sous-catégorie « ${sub} »`;
+  if (!(await confirmBox("Supprimer", `Supprimer ${what} ?${n ? ` ${n} opération${n > 1 ? "s" : ""} ou échéance${n > 1 ? "s" : ""} ${act === "delcat" ? "redeviendront « à classer »" : "garderont seulement la catégorie « " + cat + " »"}.` : ""}`))) return;
+  try { await api("POST", "/api/categories/delete", { category: cat, subcategory: act === "delcat" ? null : sub }); toast("Supprimé"); await loadCats(); await refresh({ lists: true }); } catch (e) { fail(e); }
+});
+$("#catNewForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  try { await api("POST", "/api/categories", { category: $("#cnCat").value, subcategory: $("#cnSub").value }); toast("Catégorie ajoutée"); $("#cnSub").value = ""; await loadCats(); await loadLists(); } catch (e) { fail(e); }
+});
 function renderExport() {
   const sel = $("#expAcc"), v = sel.value || S.cur;
   sel.innerHTML = S.accounts.map(a => `<option value="${a.id}">${esc(a.name)} (${a.n} opérations)</option>`).join("");
@@ -833,8 +883,8 @@ document.addEventListener("keydown", ev => {
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "n") { ev.preventDefault(); resetEntry(); $("#fDate").focus(); return; }
   if (ev.key === "Escape" && S.edit) { resetEntry(); return; }
   if (inField) return;
-  const ids = S.ops.map(o => o.id), i = ids.indexOf(S.sel);
-  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); const j = i < 0 ? ids.length - 1 : Math.max(0, Math.min(ids.length - 1, i + (ev.key === "ArrowDown" ? 1 : -1))); if (ids[j]) selRow(ids[j], true); }
+  const ids = S.ops.map(o => o.id).reverse(), i = ids.indexOf(S.sel);
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); const j = i < 0 ? 0 : Math.max(0, Math.min(ids.length - 1, i + (ev.key === "ArrowDown" ? 1 : -1))); if (ids[j]) selRow(ids[j], true); }
   else if (ev.key === " " && S.sel) { ev.preventDefault(); togglePoint(S.sel); }
   else if (ev.key === "Delete" && S.sel) { ev.preventDefault(); deleteSelected(); }
   else if (ev.key === "Enter" && S.sel) { ev.preventDefault(); startEdit(S.sel); }

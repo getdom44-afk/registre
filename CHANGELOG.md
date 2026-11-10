@@ -1,5 +1,18 @@
 # Nouveautés
 
+## 1.2.0 — 10 novembre 2026
+
+- **Opérations les plus récentes en haut.** Les échéances à valider s'affichent au-dessus de la liste.
+- **Colonne « Tiers / Détails »** : le tiers et les détails sont réunis dans une seule colonne. Les détails apparaissent en gris.
+- **Prévision fin de mois** : elle ne concerne plus que le CCP (au 19). Elle indique le solde prévu, le nombre d'échéances d'ici là et le point bas.
+- **Gestion des catégories** dans Paramètres, onglet Catégories :
+  - renommer une catégorie ou une sous-catégorie, avec fusion si le nom existe déjà ;
+  - déplacer une sous-catégorie vers une autre catégorie ;
+  - créer et supprimer des catégories ;
+  - rechercher.
+
+  Toutes les opérations et échéances concernées sont mises à jour.
+
 ## 1.1.0 — 10 novembre 2026
 
 - **Couleurs** : les lignes pointées sont vertes, les lignes non pointées sont orangées.

@@ -197,6 +197,7 @@ Quelques exemples de demandes :
 | Prévision fin de mois | En bas de la liste des comptes (le CCP au 19). Un clic ouvre la prévision détaillée. |
 | Classer | Bouton **Classer** : par commerçant, en un clic. |
 | Comptes, familles, icônes, fin de cycle | **Paramètres** |
+| Catégories | **Paramètres**, onglet **Catégories** : renommer, fusionner, déplacer, créer, supprimer. |
 
 ## 7. Questions pratiques
 

@@ -85,8 +85,8 @@
     </div>
     <div class="gridwrap" id="gridwrap" tabindex="0" aria-label="Opérations du compte">
       <table class="grid">
-        <colgroup><col class="c-p"><col class="c-date"><col class="c-mode"><col class="c-tiers"><col class="c-det"><col class="c-cat"><col class="c-sc"><col class="c-amt"><col class="c-amt"><col class="c-sol"></colgroup>
-        <thead><tr><th title="Pointage">P</th><th>Date</th><th>Mode</th><th>Tiers</th><th>Détails</th><th>Catégorie</th><th>Sous-catégorie</th><th class="r">Débit</th><th class="r">Crédit</th><th class="r">Solde</th></tr></thead>
+        <colgroup><col class="c-p"><col class="c-date"><col class="c-mode"><col class="c-lib"><col class="c-cat"><col class="c-sc"><col class="c-amt"><col class="c-amt"><col class="c-sol"></colgroup>
+        <thead><tr><th title="Pointage">P</th><th>Date ↓</th><th>Mode</th><th>Tiers / Détails</th><th>Catégorie</th><th>Sous-catégorie</th><th class="r">Débit</th><th class="r">Crédit</th><th class="r">Solde</th></tr></thead>
         <tbody id="gridBody"></tbody>
       </table>
     </div>
@@ -174,6 +174,7 @@
   <div class="win-title"><span>Paramètres</span><button class="x" data-close aria-label="Fermer">×</button></div>
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="comptes" aria-selected="true">Comptes</button>
+    <button role="tab" data-tab="cats" aria-selected="false">Catégories</button>
     <button role="tab" data-tab="io" aria-selected="false">Importer / Exporter</button>
     <button role="tab" data-tab="sauv" aria-selected="false">Sauvegardes</button>
     <button role="tab" data-tab="pref" aria-selected="false">Préférences</button>
@@ -197,6 +198,20 @@
         </div>
       </div>
       <input type="file" id="iconFile" accept="image/*" hidden>
+    </section>
+
+    <section class="tabp" id="tab-cats" hidden>
+      <div class="row cats-bar">
+        <label class="fld"><span>Rechercher</span><input type="search" id="catSearch" placeholder="Catégorie ou sous-catégorie"></label>
+        <span class="grow muted" id="catIntro"></span>
+        <form id="catNewForm" class="row" autocomplete="off">
+          <label class="fld"><span>Catégorie</span><input id="cnCat" list="dlCats" required placeholder="Ex. Loisirs"></label>
+          <label class="fld"><span>Sous-catégorie (facultatif)</span><input id="cnSub" placeholder="Ex. Cinéma"></label>
+          <button class="btn">Ajouter</button>
+        </form>
+      </div>
+      <p class="muted">Renommer une catégorie ou une sous-catégorie met à jour toutes les opérations et échéances concernées. Si le nouveau nom existe déjà, les deux sont fusionnées. Pour déplacer une sous-catégorie, changez sa catégorie.</p>
+      <div class="tablewrap fill"><table class="list big" id="catTable"></table></div>
     </section>
 
     <section class="tabp" id="tab-io" hidden>
