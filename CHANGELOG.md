@@ -1,5 +1,10 @@
 # Nouveautés
 
+## 1.4.1 — 10 novembre 2026
+
+- **Icône « R » bleue** pour l'onglet du navigateur, la barre des tâches Windows et l'écran d'accueil d'un téléphone.
+- **Registre peut s'installer comme une application** depuis Edge ou Chrome : il s'ouvre alors dans sa propre fenêtre, avec son icône, et peut être épinglé à la barre des tâches.
+
 ## 1.4.0 — 10 novembre 2026
 
 - **Solde réel dans le menu de gauche.** Le montant principal de chaque compte ne compte que les opérations pointées. Quand il reste des opérations non pointées, le solde qui les inclut s'affiche en petit, en orange, en dessous. Les totaux par famille utilisent aussi les soldes pointés.

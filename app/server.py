@@ -1691,6 +1691,10 @@ def r_backup(h, body, qs):
     h.send_bytes(200, backup_bytes(), "application/octet-stream", "registre-sauvegarde-%s.db" % today())
 
 
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+mimetypes.add_type("image/x-icon", ".ico")
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "Registre"
     protocol_version = "HTTP/1.1"
