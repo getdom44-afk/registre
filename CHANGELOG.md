@@ -1,5 +1,11 @@
 # Nouveautés
 
+## 1.0.2 — 10 novembre 2026
+
+- **Import Revolut corrigé** : les opérations annulées, marquées « RENVOYÉ » dans le relevé en français, ne sont plus comptées. Elles faussaient le solde.
+- **Paiements en attente** : ils sont inscrits sans être pointés, comme dans l'app Revolut. Le solde de Registre est donc celui qu'affiche Revolut. À l'import suivant, un paiement finalisé est pointé, et un paiement annulé est retiré.
+- **Arrondis vers la Pocket** : ils sont classés automatiquement en Epargne / Arrondis Revolut.
+
 ## 1.0.1 — 9 novembre 2026
 
 - **Icônes de compte** : le bouton « Choisir » dans Paramètres fonctionne. L'image était bloquée par la protection du navigateur.

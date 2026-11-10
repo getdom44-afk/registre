@@ -846,7 +846,13 @@ def split_any(line, sep):
     return out
 
 
+REVOLUT_PENDING_STATES = ("pending", "en attente")
+REVOLUT_REVERTED_STATES = ("reverted", "renvoye", "rembourse", "annule", "declined", "refuse", "rejete", "failed", "echoue", "expire")
+
+
 def parse_revolut_csv(text):
+    """Lit un relevé Revolut (anglais ou français). Renvoie les opérations terminées et les paiements en attente
+    (marqués pending), ainsi que les clés des opérations annulées, pour retirer un paiement en attente qui n'a jamais abouti."""
     lines = [l for l in text.lstrip("\ufeff").splitlines() if l.strip()]
     if not lines:
         raise ApiError(400, "Fichier vide")
@@ -857,21 +863,25 @@ def parse_revolut_csv(text):
         idx[key] = next((head.index(norm(n)) for n in names if norm(n) in head), -1)
     if idx["amount"] < 0 or idx["description"] < 0 or (idx["completed"] < 0 and idx["started"] < 0):
         raise ApiError(400, "Ce fichier n'a pas le format d'un relevé Revolut (colonnes Date, Description, Montant attendues)")
-    out, skipped, other_cur = [], 0, set()
+    out, reverted, skipped, other_cur = [], set(), 0, set()
     for line in lines[1:]:
         c = split_any(line, sep)
         col = lambda k: c[idx[k]].strip() if 0 <= idx[k] < len(c) else ""
-        state = norm(col("state"))
-        if state and any(state.startswith(x) for x in REVOLUT_SKIP_STATES):
-            skipped += 1
-            continue
         if any(w in norm(col("product")) for w in ("savings", "deposit", "epargne", "coffre", "vault", "pocket")):
+            skipped += 1          # mouvements internes aux coffres / Pockets
+            continue
+        cur = col("currency").upper()
+        if cur and cur != "EUR":
+            other_cur.add(cur)
+            continue
+        state = norm(col("state"))
+        pkey = "attente-" + hashlib.sha1("|".join([col("started"), col("description"), col("amount")]).encode()).hexdigest()
+        if any(state.startswith(x) for x in REVOLUT_REVERTED_STATES):
+            reverted.add(pkey)
             skipped += 1
             continue
-        if idx["completed"] >= 0 and not col("completed"):
-            skipped += 1          # opération jamais finalisée (renvoyée, en attente…) : elle n'a pas touché le solde
-            continue
-        raw_date = col("completed") or col("started")
+        pending = any(state.startswith(x) for x in REVOLUT_PENDING_STATES) or (idx["completed"] >= 0 and not col("completed"))
+        raw_date = col("started") if pending else (col("completed") or col("started"))
         m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", raw_date) or re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})", raw_date)
         if not m:
             skipped += 1
@@ -880,19 +890,16 @@ def parse_revolut_csv(text):
         try:
             amount = parse_amount(col("amount"))
             fee = abs(parse_amount(col("fee"))) if col("fee") else 0
-            balance = parse_amount(col("balance")) if col("balance") else None
+            balance = parse_amount(col("balance")) if col("balance") and not pending else None
         except ValueError:
             skipped += 1
             continue
-        cur = col("currency").upper()
-        if cur and cur != "EUR":
-            other_cur.add(cur)
-            continue
         typ = col("type")
-        out.append({"date": date, "started": col("started"), "tiers": col("description"), "amount": amount, "fee": fee, "balance": balance,
+        out.append({"date": date, "started": col("started"), "completed": "" if pending else col("completed"), "tiers": col("description"),
+                    "amount": amount, "fee": 0 if pending else fee, "balance": balance, "pending": pending, "pkey": pkey,
                     "mode": REVOLUT_MODES.get(norm(typ), typ.capitalize() if typ else ""),
-                    "ext": hashlib.sha1("|".join([col("started"), col("completed"), col("description"), col("amount"), col("fee"), col("balance")]).encode()).hexdigest()})
-    return out, skipped, sorted(other_cur)
+                    "ext": pkey if pending else hashlib.sha1("|".join([col("started"), col("completed"), col("description"), col("amount"), col("fee"), col("balance")]).encode()).hexdigest()})
+    return out, reverted, skipped, sorted(other_cur)
 
 
 def guess_category(tiers):
@@ -903,39 +910,66 @@ def guess_category(tiers):
     return r
 
 
+POCKET_RE = re.compile(r"^(sur la pocket|depuis la pocket|vers la pocket|to pocket|from pocket|pocket withdrawal|pocket top-up)", re.I)
+
+
+def revolut_category(tiers):
+    cat = guess_category(tiers)
+    if cat:
+        return cat
+    if POCKET_RE.match(tiers or ""):
+        return {"category": "Epargne", "subcategory": "Arrondis Revolut"}
+    return None
+
+
 def import_revolut(acc_id, text):
+    """Importe un relevé Revolut sans doublons. Les paiements en attente sont inscrits non pointés ;
+    à l'import suivant, ils sont finalisés (date, montant, pointage) ou retirés s'ils ont été annulés."""
     a = account_or_404(acc_id)
-    rows_in, skipped, other_cur = parse_revolut_csv(text)
+    rows_in, reverted, skipped, other_cur = parse_revolut_csv(text)
     rows_in.sort(key=lambda r: (r["date"], r["started"]))
-    added = dup = classified = 0
+    done_rows = sorted((r for r in rows_in if not r["pending"]), key=lambda r: (r["completed"] or r["date"], r["started"]))
+    added = dup = classified = finalised = cancelled = pending_n = 0
     initial_set = False
     with Tx():
         empty = not one("SELECT 1 FROM operations WHERE account_id = ? LIMIT 1", (acc_id,))
-        if empty and rows_in and rows_in[0]["balance"] is not None:
-            f = rows_in[0]
+        if empty and done_rows and done_rows[0]["balance"] is not None:
+            f = done_rows[0]
             q("UPDATE accounts SET initial = ? WHERE id = ?", (f["balance"] - f["amount"] + f["fee"], acc_id))
             initial_set = True
+        for k in reverted:
+            cancelled += q("DELETE FROM operations WHERE account_id = ? AND ext_id = ?", (acc_id, k)).rowcount
         for r in rows_in:
             if one("SELECT 1 FROM operations WHERE account_id = ? AND ext_id = ?", (acc_id, r["ext"])):
                 dup += 1
                 continue
-            cat = guess_category(r["tiers"])
+            if not r["pending"]:
+                prev = one("SELECT id FROM operations WHERE account_id = ? AND ext_id = ?", (acc_id, r["pkey"]))
+                if prev:
+                    q("UPDATE operations SET date = ?, amount = ?, pointage = 'P', ext_id = ? WHERE id = ?", (r["date"], r["amount"], r["ext"], prev["id"]))
+                    finalised += 1
+                    continue
+            cat = revolut_category(r["tiers"])
             if cat:
                 classified += 1
-            o = {"date": r["date"], "mode": r["mode"], "tiers": r["tiers"], "details": "", "amount": r["amount"], "pointage": "P",
+            o = {"date": r["date"], "mode": r["mode"], "tiers": r["tiers"], "details": "", "amount": r["amount"],
+                 "pointage": "-" if r["pending"] else "P",
                  "category": (cat or {}).get("category", ""), "subcategory": (cat or {}).get("subcategory", "")}
             op_id = insert_op(acc_id, o)
             q("UPDATE operations SET ext_id = ? WHERE id = ?", (r["ext"], op_id))
             added += 1
+            pending_n += r["pending"]
             if r["fee"]:
                 fid = insert_op(acc_id, {"date": r["date"], "mode": "Frais", "tiers": "Revolut", "details": "Frais : " + r["tiers"],
                                          "amount": -r["fee"], "pointage": "P", "category": "Banque", "subcategory": "Frais Revolut"})
                 q("UPDATE operations SET ext_id = ? WHERE id = ?", (r["ext"] + "-frais", fid))
     acc = next(x for x in list_accounts() if x["id"] == acc_id)
-    bank = rows_in[-1]["balance"] if rows_in and rows_in[-1]["balance"] is not None else None
+    bank = done_rows[-1]["balance"] if done_rows and done_rows[-1]["balance"] is not None else None
+    pend_total = sum(r["amount"] for r in rows_in if r["pending"])
     return {"account": a["name"], "added": added, "duplicates": dup, "skipped": skipped, "other_currencies": other_cur,
             "classified": classified, "to_classify": acc["unclassified"], "initial_set": initial_set,
-            "bank_balance": bank, "balance": acc["balance"]}
+            "pending": sum(1 for r in rows_in if r["pending"]), "pending_added": pending_n, "finalised": finalised, "cancelled": cancelled,
+            "bank_balance": bank, "bank_available": bank + pend_total if bank is not None else None, "balance": acc["balance"]}
 
 
 def unclassified(acc_id=None):

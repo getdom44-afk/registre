@@ -197,7 +197,8 @@ def t_importer_revolut(args):
     r = R.import_revolut(a["id"], str(args.get("contenu_csv") or ""))
     return {"ok": True, "compte": r["account"], "ajoutees": r["added"], "deja_presentes": r["duplicates"], "ignorees": r["skipped"],
             "classees_automatiquement": r["classified"], "reste_a_classer": r["to_classify"],
-            "solde_revolut": euros(r["bank_balance"]) if r["bank_balance"] is not None else None, "solde_registre": euros(r["balance"])}
+            "paiements_en_attente": r["pending"], "en_attente_finalises": r["finalised"], "en_attente_annules": r["cancelled"],
+            "solde_revolut_affiche": euros(r["bank_available"]) if r["bank_available"] is not None else None, "solde_registre": euros(r["balance"])}
 
 
 

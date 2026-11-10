@@ -467,11 +467,12 @@ $("#impRev").addEventListener("change", async ev => {
   const out = $("#impRevRes"); out.innerHTML = `<p class="muted">Import en cours…</p>`;
   try {
     const r = await api("POST", "/api/import/revolut", { account_id: Number($("#impRevAcc").value), text: await decodeFile(f) });
-    const ok = r.bank_balance === null || r.bank_balance === r.balance;
+    const ok = r.bank_available === null || r.bank_available === r.balance;
     out.innerHTML = `<p class="ok">${esc(r.account)} : ${r.added} opération${r.added > 1 ? "s" : ""} ajoutée${r.added > 1 ? "s" : ""}${r.duplicates ? `, ${r.duplicates} déjà présente${r.duplicates > 1 ? "s" : ""}` : ""}${r.classified ? `, dont ${r.classified} classée${r.classified > 1 ? "s" : ""} automatiquement` : ""}.</p>` +
-      (r.skipped ? `<p class="muted">${r.skipped} ligne${r.skipped > 1 ? "s" : ""} ignorée${r.skipped > 1 ? "s" : ""} (en attente, annulées ou coffres d'épargne).</p>` : "") +
+      (r.skipped ? `<p class="muted">${r.skipped} ligne${r.skipped > 1 ? "s" : ""} ignorée${r.skipped > 1 ? "s" : ""} (opérations annulées ou mouvements internes à vos Pockets).</p>` : "") +
       (r.other_currencies.length ? `<p class="muted">Lignes en ${esc(r.other_currencies.join(", "))} ignorées : seul l'euro est repris.</p>` : "") +
-      (r.bank_balance !== null ? `<p class="${ok ? "ok" : "neg"}">Solde Revolut ${eur(r.bank_balance)} · solde Registre ${eur(r.balance)}${ok ? " : concordants." : " : écart à vérifier."}</p>` : "") +
+      (r.pending ? `<p class="muted">${r.pending} paiement${r.pending > 1 ? "s" : ""} en attente inscrit${r.pending > 1 ? "s" : ""} non pointé${r.pending > 1 ? "s" : ""}${r.finalised ? ` · ${r.finalised} paiement${r.finalised > 1 ? "s" : ""} finalisé${r.finalised > 1 ? "s" : ""}` : ""}${r.cancelled ? ` · ${r.cancelled} annulé${r.cancelled > 1 ? "s" : ""} et retiré${r.cancelled > 1 ? "s" : ""}` : ""}.</p>` : (r.finalised || r.cancelled ? `<p class="muted">${r.finalised} paiement(s) en attente finalisé(s), ${r.cancelled} annulé(s) et retiré(s).</p>` : "")) +
+      (r.bank_available !== null ? `<p class="${ok ? "ok" : "neg"}">Solde affiché par Revolut ${eur(r.bank_available)} · solde Registre ${eur(r.balance)}${ok ? " : concordants." : " : écart à vérifier."}</p>` : "") +
       (r.to_classify ? `<div class="btns"><button class="btn primary" id="goClass">Classer ${r.to_classify} opération${r.to_classify > 1 ? "s" : ""}</button></div>` : "");
     ev.target.value = ""; S.cur = Number($("#impRevAcc").value); await refresh({ lists: true, scrollEnd: true });
   } catch (e) { out.innerHTML = `<p class="neg">${esc(e.message)}</p>`; ev.target.value = ""; }
