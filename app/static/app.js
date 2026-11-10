@@ -713,12 +713,12 @@ async function loadCats() { CATS = await api("GET", "/api/categories"); renderCa
 function moveOptions(groups, cat, sub) {
   let h = "";
   for (const [c, subs] of groups) {
-    const opts = [];
+    const opts = [`<option value="${esc(JSON.stringify([c, ""]))}">${esc(c)} (sans sous-catégorie)${c === cat ? " · supprime « " + esc(sub) + " »" : ""}</option>`];
     if (c !== cat) opts.push(`<option value="${esc(JSON.stringify([c, sub]))}">${esc(c)} › ${esc(sub)} (nouvelle)</option>`);
     for (const x of subs) if (x.subcategory && !(c === cat && x.subcategory === sub))
       opts.push(`<option value="${esc(JSON.stringify([c, x.subcategory]))}">${esc(c)} › ${esc(x.subcategory)}</option>`);
     // si la catégorie cible a déjà une sous-catégorie du même nom, l'option « (nouvelle) » est inutile
-    if (c !== cat && subs.some(x => x.subcategory === sub)) opts.shift();
+    if (c !== cat && subs.some(x => x.subcategory === sub)) opts.splice(1, 1);
     if (opts.length) h += `<optgroup label="${esc(c)}">${opts.join("")}</optgroup>`;
   }
   return h;
@@ -751,6 +751,14 @@ async function catAction(body, msg) {
   catch (e) { fail(e); await loadCats(); }
 }
 async function moveSub(cat, sub, nc, ns, sel) {
+  const n0 = CATS.filter(c => c.category === cat && c.subcategory === sub).reduce((t, c) => t + c.ops + c.sched, 0);
+  if (!ns) {
+    const ok0 = await confirmBox("Supprimer la sous-catégorie",
+      `Rattacher « ${cat} › ${sub} » directement à la catégorie « ${nc} », sans sous-catégorie ? ${n0 ? `${n0} opération${n0 > 1 ? "s" : ""} ou échéance${n0 > 1 ? "s" : ""} ser${n0 > 1 ? "ont" : "a"} reclassée${n0 > 1 ? "s" : ""} dans « ${nc} »` : "Aucune opération concernée"} et la sous-catégorie « ${sub} » disparaîtra.`);
+    if (!ok0) { sel.value = ""; return; }
+    catAction({ category: cat, subcategory: sub, new_category: nc, new_subcategory: "" }, `« ${sub} » supprimée : opérations rattachées à « ${nc} »`);
+    return;
+  }
   const exists = CATS.some(c => c.category === nc && c.subcategory === ns);
   const n = CATS.filter(c => c.category === cat && c.subcategory === sub).reduce((t, c) => t + c.ops + c.sched, 0);
   const ok = await confirmBox(exists ? "Fusionner les sous-catégories" : "Déplacer la sous-catégorie",

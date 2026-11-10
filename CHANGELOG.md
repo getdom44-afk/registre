@@ -1,5 +1,9 @@
 # Nouveautés
 
+## 1.3.2 — 10 novembre 2026
+
+- **Supprimer une sous-catégorie en rattachant ses opérations à une catégorie.** Dans « Déplacer / fusionner vers », chaque catégorie propose maintenant « (sans sous-catégorie) », y compris sa propre catégorie. Les opérations passent dans la catégorie choisie, sans sous-catégorie, et la sous-catégorie disparaît.
+
 ## 1.3.1 — 10 novembre 2026
 
 - **Fusionner une sous-catégorie dans une autre**, y compris dans une autre catégorie. Va dans Paramètres › Catégories, colonne « Déplacer / fusionner vers ». La liste propose toutes les sous-catégories existantes, rangées par catégorie. Une confirmation indique le nombre d'opérations qui seront reclassées.
