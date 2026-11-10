@@ -1,5 +1,13 @@
 # Nouveautés
 
+## 1.5.0 — 10 novembre 2026
+
+- **Connexion par passkey.** Ouvre Registre avec Windows Hello (visage, empreinte ou code PIN) ou ton téléphone, sans taper de mot de passe.
+  - Pour l'ajouter : Paramètres › Préférences › Passkeys › « Ajouter une passkey ». Cela ne fonctionne qu'à l'adresse sécurisée https://debian.home:6001.
+  - À l'ouverture, Windows Hello est proposé automatiquement. Il y a aussi le bouton « Se connecter avec une passkey ».
+  - Le mot de passe reste utilisable en secours.
+  - Les passkeys sont conservées quand on revient à un point de sauvegarde ou qu'on restaure une sauvegarde.
+
 ## 1.4.1 — 10 novembre 2026
 
 - **Icône « R » bleue** pour l'onglet du navigateur, la barre des tâches Windows et l'écran d'accueil d'un téléphone.

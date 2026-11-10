@@ -43,6 +43,7 @@ SCHEMA = """
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS passkeys (id TEXT PRIMARY KEY, name TEXT NOT NULL, public_key TEXT NOT NULL, sign_count INTEGER NOT NULL DEFAULT 0, created TEXT NOT NULL, last_used TEXT);
 CREATE TABLE IF NOT EXISTS categories (category TEXT NOT NULL, subcategory TEXT NOT NULL DEFAULT '', PRIMARY KEY (category, subcategory));
 CREATE TABLE IF NOT EXISTS families (id INTEGER PRIMARY KEY, name TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS accounts (
@@ -1121,7 +1122,7 @@ def backup_loop():
 ROUTES = []
 
 
-NOT_TRACKED = {"/api/setup", "/api/login", "/api/logout", "/api/password", "/api/backup/now", "/api/cloud",
+NOT_TRACKED = {"/api/setup", "/api/login", "/api/passkey/options", "/api/passkey/login", "/api/passkeys/options", "/api/passkeys", "/api/logout", "/api/password", "/api/backup/now", "/api/cloud",
                "/api/points", "/api/points/revert", "/api/restore", "/api/import/bpsched/preview"}
 
 
@@ -1142,7 +1143,8 @@ def mark_changed():
 
 @route("GET", "/api/auth", public=True)
 def r_auth(h, body, qs):
-    return {"setup": setting("password") is None, "logged": session_ok(h.cookie()), "version": APP_VERSION}
+    return {"setup": setting("password") is None, "logged": session_ok(h.cookie()), "version": APP_VERSION,
+            "passkeys": one("SELECT COUNT(*) AS n FROM passkeys")["n"]}
 
 
 @route("POST", "/api/setup", public=True)
@@ -1188,6 +1190,285 @@ def r_password(h, body, qs):
         raise ApiError(400, "Choisissez un mot de passe d'au moins 8 caractères")
     set_setting("password", hash_password(new))
     q("DELETE FROM sessions WHERE token <> ?", (h.cookie(),))
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- passkeys (WebAuthn), bibliothèque standard uniquement
+
+def b64u(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def b64u_dec(s):
+    s = str(s or "")
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def cbor_decode(data, pos=0):
+    """Décodeur CBOR minimal (ce qu'utilisent WebAuthn et COSE). Renvoie (valeur, position suivante)."""
+    ib = data[pos]
+    major, info = ib >> 5, ib & 31
+    pos += 1
+    if info < 24:
+        val = info
+    elif info in (24, 25, 26, 27):
+        n = 1 << (info - 24)
+        val = int.from_bytes(data[pos:pos + n], "big")
+        pos += n
+    else:
+        raise ValueError("CBOR non pris en charge")
+    if major == 0:
+        return val, pos
+    if major == 1:
+        return -1 - val, pos
+    if major in (2, 3):
+        chunk = data[pos:pos + val]
+        if len(chunk) != val:
+            raise ValueError("CBOR tronqué")
+        return (bytes(chunk) if major == 2 else chunk.decode("utf-8")), pos + val
+    if major == 4:
+        out = []
+        for _ in range(val):
+            v, pos = cbor_decode(data, pos)
+            out.append(v)
+        return out, pos
+    if major == 5:
+        out = {}
+        for _ in range(val):
+            k, pos = cbor_decode(data, pos)
+            v, pos = cbor_decode(data, pos)
+            out[k] = v
+        return out, pos
+    if major == 7:
+        return {20: False, 21: True, 22: None}.get(val), pos
+    raise ValueError("CBOR non pris en charge")
+
+
+# Courbe P-256 (secp256r1) : vérification ECDSA seulement (aucune clé secrète manipulée ici).
+_P = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff
+_A = _P - 3
+_B = 0x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b
+_N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551
+_G = (0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296,
+      0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5)
+
+
+def _ec_add(p1, p2):
+    if p1 is None:
+        return p2
+    if p2 is None:
+        return p1
+    (x1, y1), (x2, y2) = p1, p2
+    if x1 == x2:
+        if (y1 + y2) % _P == 0:
+            return None
+        lam = (3 * x1 * x1 + _A) * pow(2 * y1, -1, _P) % _P
+    else:
+        lam = (y2 - y1) * pow(x2 - x1, -1, _P) % _P
+    x3 = (lam * lam - x1 - x2) % _P
+    return x3, (lam * (x1 - x3) - y1) % _P
+
+
+def _ec_mul(k, pt):
+    acc = None
+    while k:
+        if k & 1:
+            acc = _ec_add(acc, pt)
+        pt = _ec_add(pt, pt)
+        k >>= 1
+    return acc
+
+
+def _der_sig(sig):
+    """Signature ECDSA au format DER (SEQUENCE de deux INTEGER) → (r, s)."""
+    if len(sig) < 8 or sig[0] != 0x30:
+        raise ValueError("signature invalide")
+    pos, out = 2, []
+    if sig[1] & 0x80:
+        pos = 2 + (sig[1] & 0x7f)
+    for _ in range(2):
+        if sig[pos] != 0x02:
+            raise ValueError("signature invalide")
+        n = sig[pos + 1]
+        out.append(int.from_bytes(sig[pos + 2:pos + 2 + n], "big"))
+        pos += 2 + n
+    return out
+
+
+def es256_verify(x, y, msg, sig):
+    try:
+        r, s = _der_sig(sig)
+    except (ValueError, IndexError):
+        return False
+    if not (1 <= r < _N and 1 <= s < _N):
+        return False
+    if not (0 <= x < _P and 0 <= y < _P) or (y * y - (x * x * x + _A * x + _B)) % _P:
+        return False
+    e = int.from_bytes(hashlib.sha256(msg).digest(), "big")
+    w = pow(s, -1, _N)
+    pt = _ec_add(_ec_mul(e * w % _N, _G), _ec_mul(r * w % _N, (x, y)))
+    return pt is not None and pt[0] % _N == r
+
+
+def rs256_verify(n, e, msg, sig):
+    k = (n.bit_length() + 7) // 8
+    if len(sig) != k or n.bit_length() < 2048:
+        return False
+    em = pow(int.from_bytes(sig, "big"), e, n).to_bytes(k, "big")
+    digest_info = bytes.fromhex("3031300d060960864801650304020105000420") + hashlib.sha256(msg).digest()
+    expected = b"\x00\x01" + b"\xff" * (k - len(digest_info) - 3) + b"\x00" + digest_info
+    return hmac.compare_digest(em, expected)
+
+
+def cose_to_key(cose):
+    """Clé publique COSE → dict JSON stockable."""
+    kty, alg = cose.get(1), cose.get(3)
+    if kty == 2 and alg == -7 and cose.get(-1) == 1:
+        return {"alg": -7, "x": b64u(cose[-2]), "y": b64u(cose[-3])}
+    if kty == 3 and alg == -257:
+        return {"alg": -257, "n": b64u(cose[-1]), "e": b64u(cose[-2])}
+    raise ApiError(400, "Type de clé non pris en charge par Registre")
+
+
+def verify_with_key(key, msg, sig):
+    if key["alg"] == -7:
+        return es256_verify(int.from_bytes(b64u_dec(key["x"]), "big"), int.from_bytes(b64u_dec(key["y"]), "big"), msg, sig)
+    if key["alg"] == -257:
+        return rs256_verify(int.from_bytes(b64u_dec(key["n"]), "big"), int.from_bytes(b64u_dec(key["e"]), "big"), msg, sig)
+    return False
+
+
+_challenges = {}   # défi → (type, expiration)
+
+
+def new_challenge(kind):
+    now = time.time()
+    for k in [k for k, (_, exp) in _challenges.items() if exp < now]:
+        del _challenges[k]
+    ch = b64u(secrets.token_bytes(32))
+    _challenges[ch] = (kind, now + 300)
+    return ch
+
+
+def take_challenge(ch, kind):
+    v = _challenges.pop(ch, None)
+    if not v or v[0] != kind or v[1] < time.time():
+        raise ApiError(400, "Demande expirée : recommencez.")
+
+
+def rp_of(h):
+    """Identifiant du site (nom sans port) et origine attendue, d'après l'adresse utilisée dans le navigateur."""
+    host = (h.headers.get("X-Forwarded-Host") or h.headers.get("Host") or "").split(",")[0].strip()
+    proto = (h.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip()
+    name = host.rsplit(":", 1)[0] if not host.endswith("]") else host
+    return name.strip("[]"), "%s://%s" % (proto, host)
+
+
+def check_client_data(h, raw, kind):
+    try:
+        cd = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        raise ApiError(400, "Réponse de la passkey illisible")
+    if cd.get("type") != kind:
+        raise ApiError(400, "Réponse de la passkey inattendue")
+    take_challenge(cd.get("challenge"), kind)
+    rp_id, origin = rp_of(h)
+    if cd.get("origin") != origin:
+        raise ApiError(400, "Origine inattendue (%s)" % cd.get("origin"))
+    return rp_id
+
+
+def parse_auth_data(ad, rp_id):
+    if len(ad) < 37 or ad[:32] != hashlib.sha256(rp_id.encode()).digest():
+        raise ApiError(400, "Passkey créée pour un autre site")
+    flags = ad[32]
+    if not flags & 0x01 or not flags & 0x04:
+        raise ApiError(400, "Vérification de l'utilisateur requise (Windows Hello, empreinte, code…)")
+    return flags, int.from_bytes(ad[33:37], "big")
+
+
+def passkey_user_id():
+    uid = setting("passkey_user")
+    if not uid:
+        uid = b64u(secrets.token_bytes(16))
+        set_setting("passkey_user", uid)
+    return uid
+
+
+@route("GET", "/api/passkeys")
+def r_passkeys(h, body, qs):
+    return rows("SELECT id, name, created, last_used FROM passkeys ORDER BY created")
+
+
+@route("POST", "/api/passkeys/options")
+def r_passkey_reg_options(h, body, qs):
+    rp_id, _ = rp_of(h)
+    return {
+        "challenge": new_challenge("webauthn.create"),
+        "rp": {"id": rp_id, "name": "Registre"},
+        "user": {"id": passkey_user_id(), "name": "registre", "displayName": "Registre"},
+        "pubKeyCredParams": [{"type": "public-key", "alg": -7}, {"type": "public-key", "alg": -257}],
+        "authenticatorSelection": {"residentKey": "required", "requireResidentKey": True, "userVerification": "required"},
+        "attestation": "none", "timeout": 120000,
+        "excludeCredentials": [{"type": "public-key", "id": r["id"]} for r in rows("SELECT id FROM passkeys")],
+    }
+
+
+@route("POST", "/api/passkeys")
+def r_passkey_register(h, body, qs):
+    rp_id = check_client_data(h, b64u_dec(body.get("clientDataJSON")), "webauthn.create")
+    try:
+        att, _ = cbor_decode(b64u_dec(body.get("attestationObject")))
+        ad = att["authData"]
+    except (ValueError, KeyError, IndexError, TypeError):
+        raise ApiError(400, "Réponse de la passkey illisible")
+    flags, count = parse_auth_data(ad, rp_id)
+    if not flags & 0x40:
+        raise ApiError(400, "La passkey n'a pas fourni de clé")
+    n = int.from_bytes(ad[53:55], "big")
+    cred_id = ad[55:55 + n]
+    cose, _ = cbor_decode(ad, 55 + n)
+    key = cose_to_key(cose)
+    name = str(body.get("name") or "").strip()[:60] or "Passkey"
+    with Tx():
+        q("INSERT INTO passkeys(id, name, public_key, sign_count, created) VALUES(?, ?, ?, ?, ?)",
+          (b64u(cred_id), name, json.dumps(key), count, dt.datetime.now().isoformat(timespec="seconds")))
+    return {"ok": True}
+
+
+@route("DELETE", r"/api/passkeys/([A-Za-z0-9_\-]+)")
+def r_passkey_delete(h, body, qs, pid):
+    q("DELETE FROM passkeys WHERE id = ?", (pid,))
+    return {"ok": True}
+
+
+@route("POST", "/api/passkey/options", public=True)
+def r_passkey_login_options(h, body, qs):
+    rp_id, _ = rp_of(h)
+    return {"challenge": new_challenge("webauthn.get"), "rpId": rp_id, "userVerification": "required", "timeout": 120000, "allowCredentials": []}
+
+
+@route("POST", "/api/passkey/login", public=True)
+def r_passkey_login(h, body, qs):
+    now = time.time()
+    _failures[:] = [t for t in _failures if now - t < 300]
+    if len(_failures) >= 10:
+        raise ApiError(429, "Trop d'essais. Réessayez dans quelques minutes.")
+    cred = one("SELECT * FROM passkeys WHERE id = ?", (str(body.get("id") or ""),))
+    if not cred:
+        _failures.append(now)
+        raise ApiError(401, "Cette passkey n'est pas (ou plus) enregistrée dans Registre")
+    raw_cd = b64u_dec(body.get("clientDataJSON"))
+    rp_id = check_client_data(h, raw_cd, "webauthn.get")
+    ad = b64u_dec(body.get("authenticatorData"))
+    _, count = parse_auth_data(ad, rp_id)
+    if not verify_with_key(json.loads(cred["public_key"]), ad + hashlib.sha256(raw_cd).digest(), b64u_dec(body.get("signature"))):
+        _failures.append(now)
+        raise ApiError(401, "Signature de la passkey invalide")
+    if count and cred["sign_count"] and count <= cred["sign_count"]:
+        raise ApiError(401, "Compteur de la passkey incohérent (clé copiée ?)")
+    q("UPDATE passkeys SET sign_count = ?, last_used = ? WHERE id = ?", (count, dt.datetime.now().isoformat(timespec="seconds"), cred["id"]))
+    h.set_cookie(new_session())
     return {"ok": True}
 
 
@@ -1608,8 +1889,9 @@ def make_point():
 
 def restore_file(path, keep_access=True):
     """Remplace les données par celles d'un fichier, en conservant le mot de passe et les sessions en cours."""
-    pw = setting("password")
+    pw, puser = setting("password"), setting("passkey_user")
     sessions = rows("SELECT * FROM sessions")
+    keys = rows("SELECT * FROM passkeys")
     src = sqlite3.connect(path)
     try:
         names = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
@@ -1627,6 +1909,12 @@ def restore_file(path, keep_access=True):
             set_setting("password", pw)
         for se in sessions:
             q("INSERT OR IGNORE INTO sessions(token, expires) VALUES(?, ?)", (se["token"], se["expires"]))
+        if puser:
+            set_setting("passkey_user", puser)
+        q("DELETE FROM passkeys")
+        for k in keys:
+            q("INSERT INTO passkeys(id, name, public_key, sign_count, created, last_used) VALUES(?, ?, ?, ?, ?, ?)",
+              (k["id"], k["name"], k["public_key"], k["sign_count"], k["created"], k["last_used"]))
 
 
 @route("GET", "/api/points")
@@ -1787,7 +2075,7 @@ class Handler(BaseHTTPRequestHandler):
                         if not public and not session_ok(self.cookie()):
                             raise ApiError(401, "Session expirée, reconnectez-vous")
                         res = fn(self, body, qs, *mt.groups())
-                        if method != "GET" and url.path not in NOT_TRACKED:
+                        if method != "GET" and url.path not in NOT_TRACKED and not url.path.startswith("/api/passkey"):
                             mark_changed()
                     if not self._sent:
                         self.send_json(200, res)

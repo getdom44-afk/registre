@@ -65,7 +65,7 @@ let setupMode = false;
 async function boot() {
   let a;
   try { a = await api("GET", "/api/auth"); } catch (e) { toast("Le serveur ne répond pas"); return; }
-  S.version = a.version;
+  S.version = a.version; S.auth = a;
   renderSortHeads(); $("#tbUnp").classList.toggle("on", S.period === "unpointed");
   if (!a.logged) return showLogin(a.setup);
   await startApp();
@@ -78,7 +78,69 @@ function showLogin(setup) {
   $("#loginBtn").textContent = setup ? "Créer et ouvrir" : "Ouvrir";
   $("#loginErr").hidden = true; $("#loginPw").value = ""; $("#loginPw2").value = "";
   setTimeout(() => $("#loginPw").focus(), 30);
+  const pk = !setup && pkSupported() && S.auth && S.auth.passkeys > 0;
+  $("#pkLoginRow").hidden = !pk;
+  if (pk && !S.pkTried) { S.pkTried = true; setTimeout(() => passkeyLogin(true), 150); }   // propose Windows Hello dès l'ouverture
 }
+
+/* ---------- passkeys (WebAuthn) ---------- */
+const pkSupported = () => !!(window.PublicKeyCredential && window.isSecureContext && navigator.credentials);
+const b64uToBuf = s => { s = s.replace(/-/g, "+").replace(/_/g, "/"); const b = atob(s + "===".slice((s.length + 3) % 4)); return Uint8Array.from(b, c => c.charCodeAt(0)).buffer; };
+const bufToB64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function pkError(e) {
+  if (e && (e.name === "NotAllowedError" || e.name === "AbortError")) return "Opération annulée ou délai dépassé.";
+  if (e && e.name === "InvalidStateError") return "Cet appareil a déjà une passkey enregistrée pour Registre.";
+  if (e && e.name === "SecurityError") return "Les passkeys ne fonctionnent qu'à l'adresse https://debian.home:6001.";
+  return (e && e.message) || "Erreur";
+}
+async function passkeyLogin(auto) {
+  const err = $("#loginErr"); err.hidden = true;
+  try {
+    const o = await api("POST", "/api/passkey/options", {});
+    const cred = await navigator.credentials.get({ publicKey: { challenge: b64uToBuf(o.challenge), rpId: o.rpId, userVerification: o.userVerification, timeout: o.timeout, allowCredentials: [] } });
+    const r = cred.response;
+    await api("POST", "/api/passkey/login", { id: cred.id, clientDataJSON: bufToB64u(r.clientDataJSON), authenticatorData: bufToB64u(r.authenticatorData), signature: bufToB64u(r.signature) });
+    await startApp();
+  } catch (e) {
+    if (auto && e && (e.name === "NotAllowedError" || e.name === "AbortError")) return;   // fenêtre fermée : on reste sur le mot de passe
+    err.textContent = pkError(e); err.hidden = false;
+  }
+}
+$("#pkLogin").addEventListener("click", () => passkeyLogin(false));
+async function loadPasskeys() {
+  const ok = pkSupported();
+  $("#pkForm").hidden = !ok;
+  $("#pkWarn").hidden = ok;
+  if (!ok) $("#pkWarn").textContent = "Pour ajouter une passkey, ouvrez Registre à l'adresse sécurisée https://debian.home:6001.";
+  let list = [];
+  try { list = await api("GET", "/api/passkeys"); } catch (e) { fail(e); }
+  const d = v => v ? fmtDate(v.slice(0, 10)) + " à " + v.slice(11, 16) : "jamais";
+  $("#pkTable").innerHTML = list.length ? `<thead><tr><th>Passkey</th><th>Ajoutée le</th><th>Dernière utilisation</th><th></th></tr></thead><tbody>` +
+    list.map(k => `<tr><td>${esc(k.name)}</td><td>${d(k.created)}</td><td>${d(k.last_used)}</td><td class="acts"><button class="btn mini danger" data-pk="${esc(k.id)}" data-name="${esc(k.name)}">Supprimer</button></td></tr>`).join("") + "</tbody>"
+    : `<tbody><tr><td class="empty">Aucune passkey pour l'instant.</td></tr></tbody>`;
+}
+$("#pkForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  $("#pkAdd").disabled = true;
+  try {
+    const o = await api("POST", "/api/passkeys/options", {});
+    const cred = await navigator.credentials.create({ publicKey: {
+      challenge: b64uToBuf(o.challenge), rp: o.rp, user: Object.assign({}, o.user, { id: b64uToBuf(o.user.id) }),
+      pubKeyCredParams: o.pubKeyCredParams, authenticatorSelection: o.authenticatorSelection, attestation: o.attestation, timeout: o.timeout,
+      excludeCredentials: o.excludeCredentials.map(c => ({ type: c.type, id: b64uToBuf(c.id) }))
+    } });
+    await api("POST", "/api/passkeys", { name: $("#pkName").value, clientDataJSON: bufToB64u(cred.response.clientDataJSON), attestationObject: bufToB64u(cred.response.attestationObject) });
+    $("#pkName").value = ""; toast("Passkey ajoutée : vous pourrez l'utiliser à la prochaine connexion");
+    if (S.auth) S.auth.passkeys = (S.auth.passkeys || 0) + 1;
+    await loadPasskeys();
+  } catch (e) { toast(pkError(e)); }
+  finally { $("#pkAdd").disabled = false; }
+});
+$("#pkTable").addEventListener("click", async ev => {
+  const b = ev.target.closest("[data-pk]"); if (!b) return;
+  if (!(await confirmBox("Supprimer la passkey", `Supprimer « ${b.dataset.name} » ? Elle ne permettra plus d'ouvrir Registre. Pensez aussi à la retirer de l'appareil (Paramètres Windows › Comptes › Passkeys).`))) return;
+  try { await api("DELETE", "/api/passkeys/" + encodeURIComponent(b.dataset.pk)); toast("Passkey supprimée"); await loadPasskeys(); } catch (e) { fail(e); }
+});
 $("#loginForm").addEventListener("submit", async ev => {
   ev.preventDefault();
   const pw = $("#loginPw").value, err = $("#loginErr");
@@ -760,7 +822,7 @@ $("#impBpsList").addEventListener("click", async ev => {
 let FAMS = [];
 async function openSettings(tab) {
   FAMS = await api("GET", "/api/families");
-  renderAccTable(); renderFams(); renderBackup(); renderPoints(); renderExport(); loadCats().catch(fail);
+  renderAccTable(); renderFams(); renderBackup(); renderPoints(); renderExport(); loadCats().catch(fail); loadPasskeys();
   $("#appVersion").textContent = "Registre, version " + (S.version || "?");
   $("#setHorizon").value = String(S.settings.horizon);
   showTab(typeof tab === "string" ? tab : "comptes");
