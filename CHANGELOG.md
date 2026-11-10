@@ -1,5 +1,9 @@
 # Nouveautés
 
+## 1.3.1 — 10 novembre 2026
+
+- **Fusionner une sous-catégorie dans une autre**, y compris dans une autre catégorie. Va dans Paramètres › Catégories, colonne « Déplacer / fusionner vers ». La liste propose toutes les sous-catégories existantes, rangées par catégorie. Une confirmation indique le nombre d'opérations qui seront reclassées.
+
 ## 1.3.0 — 10 novembre 2026
 
 - **Changer la catégorie de plusieurs opérations à la fois.** Sélectionnez-les, puis cliquez sur « Catégorie… » dans la barre d'outils. Indiquez la nouvelle catégorie et la sous-catégorie, puis « Appliquer ».

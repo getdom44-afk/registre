@@ -709,11 +709,25 @@ function showTab(name) {
 $("#dlgSettings .tabs").addEventListener("click", ev => { const b = ev.target.closest("[data-tab]"); if (b) showTab(b.dataset.tab); });
 let CATS = [];
 async function loadCats() { CATS = await api("GET", "/api/categories"); renderCats(); }
+// Cibles possibles pour une sous-catégorie : une autre catégorie (en gardant son nom) ou une sous-catégorie existante (fusion).
+function moveOptions(groups, cat, sub) {
+  let h = "";
+  for (const [c, subs] of groups) {
+    const opts = [];
+    if (c !== cat) opts.push(`<option value="${esc(JSON.stringify([c, sub]))}">${esc(c)} › ${esc(sub)} (nouvelle)</option>`);
+    for (const x of subs) if (x.subcategory && !(c === cat && x.subcategory === sub))
+      opts.push(`<option value="${esc(JSON.stringify([c, x.subcategory]))}">${esc(c)} › ${esc(x.subcategory)}</option>`);
+    // si la catégorie cible a déjà une sous-catégorie du même nom, l'option « (nouvelle) » est inutile
+    if (c !== cat && subs.some(x => x.subcategory === sub)) opts.shift();
+    if (opts.length) h += `<optgroup label="${esc(c)}">${opts.join("")}</optgroup>`;
+  }
+  return h;
+}
 function renderCats() {
   const f = norm($("#catSearch").value), groups = new Map();
   for (const c of CATS) { if (!groups.has(c.category)) groups.set(c.category, []); groups.get(c.category).push(c); }
   const catNames = [...groups.keys()];
-  let html = `<thead><tr><th>Catégorie / sous-catégorie</th><th>Déplacer vers la catégorie</th><th class="r">Opérations</th><th class="r">Échéances</th><th></th></tr></thead><tbody>`, shown = 0;
+  let html = `<thead><tr><th>Catégorie / sous-catégorie</th><th>Déplacer / fusionner vers</th><th class="r">Opérations</th><th class="r">Échéances</th><th></th></tr></thead><tbody>`, shown = 0;
   for (const [cat, subs] of groups) {
     const hit = !f || norm(cat).includes(f) || subs.some(x => norm(x.subcategory).includes(f));
     if (!hit) continue;
@@ -724,7 +738,7 @@ function renderCats() {
       shown++;
       const a = x.archived || ca;
       html += `<tr class="${a ? "archived" : ""}" data-cat="${esc(cat)}" data-sub="${esc(x.subcategory)}"><td class="sub-indent"><input data-f="sub" value="${esc(x.subcategory)}" aria-label="Nom de la sous-catégorie">${x.archived ? `<span class="tag-arch">archivée</span>` : ""}</td>
-        <td><select data-f="move" aria-label="Déplacer vers"><option value="">—</option>${catNames.filter(n => n !== cat).map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select></td>
+        <td><select data-f="move" aria-label="Déplacer ou fusionner vers"><option value="">—</option>${moveOptions(groups, cat, x.subcategory)}</select></td>
         <td class="r cnt">${x.ops}</td><td class="r cnt">${x.sched}</td><td class="acts">${ca ? "" : `<button class="btn mini" data-act="${x.archived ? "unarchsub" : "archsub"}" title="${x.archived ? "Proposer de nouveau cette sous-catégorie à la saisie" : "Ne plus proposer cette sous-catégorie à la saisie d'une nouvelle opération (elle reste utilisable)"}">${x.archived ? "Réactiver" : "Archiver"}</button> `}<button class="btn mini danger" data-act="delsub">Supprimer</button></td></tr>`;
     }
   }
@@ -736,13 +750,21 @@ async function catAction(body, msg) {
   try { const r = await api("POST", "/api/categories/rename", body); toast(msg + (r.updated ? ` (${r.updated} ligne${r.updated > 1 ? "s" : ""} mise${r.updated > 1 ? "s" : ""} à jour)` : "")); await loadCats(); await refresh({ lists: true }); }
   catch (e) { fail(e); await loadCats(); }
 }
+async function moveSub(cat, sub, nc, ns, sel) {
+  const exists = CATS.some(c => c.category === nc && c.subcategory === ns);
+  const n = CATS.filter(c => c.category === cat && c.subcategory === sub).reduce((t, c) => t + c.ops + c.sched, 0);
+  const ok = await confirmBox(exists ? "Fusionner les sous-catégories" : "Déplacer la sous-catégorie",
+    `${exists ? "Fusionner" : "Déplacer"} « ${cat} › ${sub} » ${exists ? "dans" : "vers"} « ${nc} › ${ns} » ? ${n ? `${n} opération${n > 1 ? "s" : ""} ou échéance${n > 1 ? "s" : ""} ser${n > 1 ? "ont" : "a"} reclassée${n > 1 ? "s" : ""}` : "Aucune opération concernée"}${exists ? ` et « ${sub} » disparaîtra` : ""}.`);
+  if (!ok) { sel.value = ""; return; }
+  catAction({ category: cat, subcategory: sub, new_category: nc, new_subcategory: ns }, exists ? `« ${sub} » fusionnée dans « ${nc} › ${ns} »` : `« ${sub} » déplacée dans « ${nc} »`);
+}
 $("#catSearch").addEventListener("input", renderCats);
 $("#catTable").addEventListener("change", ev => {
   const tr = ev.target.closest("tr[data-cat]"); if (!tr) return;
   const cat = tr.dataset.cat, sub = tr.dataset.sub, f = ev.target.dataset.f, v = ev.target.value.trim();
   if (f === "cat" && v && v !== cat) catAction({ category: cat, subcategory: null, new_category: v }, CATS.some(c => c.category === v) ? `« ${cat} » fusionnée dans « ${v} »` : `Catégorie renommée en « ${v} »`);
   if (f === "sub" && v !== sub) catAction({ category: cat, subcategory: sub, new_category: cat, new_subcategory: v }, `Sous-catégorie renommée en « ${v || "(aucune)"} »`);
-  if (f === "move" && v) catAction({ category: cat, subcategory: sub, new_category: v, new_subcategory: sub }, `« ${sub} » déplacée dans « ${v} »`);
+  if (f === "move" && v) moveSub(cat, sub, ...JSON.parse(v), ev.target);
 });
 $("#catTable").addEventListener("click", async ev => {
   const act = ev.target.dataset.act, tr = ev.target.closest("tr[data-cat]"); if (!act || !tr) return;
