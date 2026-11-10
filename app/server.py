@@ -818,7 +818,7 @@ REVOLUT_MODES = {
     "topup": "Rechargement", "rechargement": "Rechargement", "transfer": "Virement", "virement": "Virement", "exchange": "Change", "change": "Change",
     "atm": "Retrait", "retrait": "Retrait", "fee": "Frais", "frais": "Frais", "reward": "Récompense", "cashback": "Cashback",
 }
-REVOLUT_SKIP_STATES = ("pending", "reverted", "declined", "failed", "en attente", "annule", "refuse", "rejete", "echoue")
+REVOLUT_SKIP_STATES = ("pending", "reverted", "declined", "failed", "en attente", "annule", "refuse", "rejete", "echoue", "renvoye", "rembourse", "expire")
 
 
 def split_any(line, sep):
@@ -867,6 +867,9 @@ def parse_revolut_csv(text):
             continue
         if any(w in norm(col("product")) for w in ("savings", "deposit", "epargne", "coffre", "vault", "pocket")):
             skipped += 1
+            continue
+        if idx["completed"] >= 0 and not col("completed"):
+            skipped += 1          # opération jamais finalisée (renvoyée, en attente…) : elle n'a pas touché le solde
             continue
         raw_date = col("completed") or col("started")
         m = re.match(r"^(\d{4})-(\d{2})-(\d{2})", raw_date) or re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})", raw_date)
