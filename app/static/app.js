@@ -50,7 +50,7 @@ const fail = e => toast(e.message || String(e));
 /* ---------- état ---------- */
 const S = {
   accounts: [], cur: null, ops: [], schedules: [], lists: { categories: [], tiers: [], modes: [] }, settings: { horizon: 7 },
-  sel: null, edit: null, period: "12m", search: "", points: { changes: 0, last: null, points: [] }
+  sel: null, selSet: new Set(), anchor: null, edit: null, period: "12m", search: "", points: { changes: 0, last: null, points: [] }
 };
 try { S.cur = Number(localStorage.getItem("registre.cur")) || null; S.period = localStorage.getItem("registre.period") || "12m"; } catch (e) {}
 const acc = id => S.accounts.find(a => a.id === id);
@@ -101,12 +101,26 @@ async function loadLists() {
   S.lists = await api("GET", "/api/lists");
   $("#dlModes").innerHTML = S.lists.modes.map(m => `<option value="${esc(m)}">`).join("");
   $("#dlTiers").innerHTML = S.lists.tiers.map(t => `<option value="${esc(t.tiers)}">`).join("");
-  $("#dlCats").innerHTML = [...new Set(S.lists.categories.map(c => c.category))].map(c => `<option value="${esc(c)}">`).join("");
+  // dlCats / dlSubs : catégories actives (saisie d'une nouvelle opération ou échéance) ;
+  // dlCatsAll / dlSubsAll : toutes, archivées comprises (modification, classement, déplacement).
+  const cats = new Map();
+  for (const c of S.lists.categories) cats.set(c.category, !!c.cat_archived);
+  $("#dlCats").innerHTML = [...cats].filter(([, a]) => !a).map(([c]) => `<option value="${esc(c)}">`).join("");
+  $("#dlCatsAll").innerHTML = [...cats].map(([c, a]) => `<option value="${esc(c)}"${a ? ' label="archivée"' : ""}>`).join("");
   fillSubs("");
 }
+function isArchived(cat, sub) {
+  return (S.lists.categories || []).some(c => norm(c.category) === norm(cat) && (c.cat_archived || (sub && norm(c.subcategory) === norm(sub) && c.archived)));
+}
 function fillSubs(cat) {
-  const subs = S.lists.categories.filter(c => c.subcategory && (!cat || norm(c.category) === norm(cat))).map(c => c.subcategory);
-  $("#dlSubs").innerHTML = [...new Set(subs)].map(s => `<option value="${esc(s)}">`).join("");
+  const all = new Map();
+  for (const c of S.lists.categories) if (c.subcategory && (!cat || norm(c.category) === norm(cat))) all.set(c.subcategory, (all.get(c.subcategory) ?? true) && !!c.archived);
+  $("#dlSubs").innerHTML = [...all].filter(([, a]) => !a).map(([s]) => `<option value="${esc(s)}">`).join("");
+  $("#dlSubsAll").innerHTML = [...all].map(([s, a]) => `<option value="${esc(s)}"${a ? ' label="archivée"' : ""}>`).join("");
+}
+function entryLists(all) {
+  $("#fCat").setAttribute("list", all ? "dlCatsAll" : "dlCats");
+  $("#fSc").setAttribute("list", all ? "dlSubsAll" : "dlSubs");
 }
 async function loadOps(scrollEnd) {
   try { localStorage.setItem("registre.cur", S.cur || ""); localStorage.setItem("registre.period", S.period); } catch (e) {}
@@ -153,7 +167,7 @@ function renderSideFc() {
 $("#sideFc").addEventListener("click", () => { const id = Number($("#sideFc").dataset.acc); if (id) { S.cur = id; renderTree(); loadOps(true).catch(fail); } openFc(); });
 $("#accountTree").addEventListener("click", async ev => {
   const b = ev.target.closest(".acc"); if (!b) return;
-  S.cur = Number(b.dataset.id); S.sel = null; resetEntry(); renderTree();
+  S.cur = Number(b.dataset.id); S.sel = null; S.selSet.clear(); resetEntry(); renderTree();
   await loadOps(true).catch(fail);
 });
 
@@ -172,7 +186,7 @@ function upcomingFor(id) {
 }
 function opRow(o) {
   const t = todayIso(), x = o.transfer_account ? ` <span class="xfer" title="Virement interne">⇄</span>` : "";
-  const c = ["op", o.pointage === "-" ? "pt-no" : "pt-ok", o.date > t ? "future" : "", o.pointage === "R" ? "rec" : "", o.id === S.sel ? "sel" : "", o.id === S.edit ? "editing" : ""].join(" ");
+  const c = ["op", o.pointage === "-" ? "pt-no" : "pt-ok", o.date > t ? "future" : "", o.pointage === "R" ? "rec" : "", S.selSet.has(o.id) ? "sel" : "", o.id === S.edit ? "editing" : ""].join(" ");
   return `<tr class="${c}" data-id="${o.id}">
     <td class="pt ${o.pointage}" title="${o.pointage === "R" ? "Rapprochée" : o.pointage === "P" ? "Pointée : cliquez pour dépointer" : "Cliquez pour pointer"}">${o.pointage === "-" ? "" : o.pointage}</td>
     <td class="num">${fmtDate(o.date)}</td>
@@ -205,13 +219,31 @@ function renderGrid() {
   html += S.ops.length ? S.ops.slice().reverse().map(opRow).join("") :
     `<tr class="empty"><td colspan="9">${S.search ? "Aucune opération ne correspond à « " + esc(S.search) + " »." : "Aucune opération sur cette période."}</td></tr>`;
   body.innerHTML = html;
+  const present = new Set(S.ops.map(o => o.id));
+  for (const id of [...S.selSet]) if (!present.has(id)) S.selSet.delete(id);
+  if (S.sel && !present.has(S.sel)) S.sel = null;
 }
-function selRow(id, scroll) {
-  S.sel = id;
-  $$("#gridBody tr.sel").forEach(r => r.classList.remove("sel"));
+/* Sélection : clic = une ligne ; Ctrl+clic = ajouter / retirer ; Maj+clic (ou Maj+flèches) = plage ; Ctrl+A = tout. */
+const displayIds = () => S.ops.map(o => o.id).reverse();
+function selRow(id, scroll, mode) {
+  if (mode === "toggle") { S.selSet.has(id) ? S.selSet.delete(id) : S.selSet.add(id); S.anchor = id; }
+  else if (mode === "range" && S.anchor != null) {
+    const ids = displayIds(), a = ids.indexOf(S.anchor), b = ids.indexOf(id);
+    S.selSet = new Set(a < 0 || b < 0 ? [id] : ids.slice(Math.min(a, b), Math.max(a, b) + 1));
+  }
+  else { S.selSet = new Set([id]); S.anchor = id; }
+  S.sel = S.selSet.has(id) ? id : (S.selSet.size ? [...S.selSet].pop() : null);
+  paintSel();
   const tr = $(`#gridBody tr[data-id="${id}"]`);
-  if (tr) { tr.classList.add("sel"); if (scroll) tr.scrollIntoView({ block: "nearest" }); }
+  if (tr && scroll) tr.scrollIntoView({ block: "nearest" });
 }
+function selectAll() { S.selSet = new Set(S.ops.map(o => o.id)); paintSel(); }
+function clearSel() { S.selSet.clear(); S.sel = null; S.anchor = null; paintSel(); }
+function paintSel() {
+  $$("#gridBody tr.op").forEach(r => r.classList.toggle("sel", S.selSet.has(Number(r.dataset.id))));
+  renderStatus();
+}
+const selectedOps = () => S.ops.filter(o => S.selSet.has(o.id));
 $("#gridBody").addEventListener("click", async ev => {
   const up = ev.target.closest("tr.up");
   if (up) {
@@ -226,9 +258,13 @@ $("#gridBody").addEventListener("click", async ev => {
   }
   const tr = ev.target.closest("tr.op"); if (!tr) return;
   const id = Number(tr.dataset.id);
+  if (ev.ctrlKey || ev.metaKey) { selRow(id, false, "toggle"); return; }
+  if (ev.shiftKey) { selRow(id, false, "range"); return; }
+  if (ev.target.closest("td.pt") && S.selSet.size > 1 && S.selSet.has(id)) { await pointSelected(); return; }
   selRow(id);
   if (ev.target.closest("td.pt")) await togglePoint(id);
 });
+$("#gridBody").addEventListener("mousedown", ev => { if (ev.shiftKey && ev.target.closest("tr.op")) ev.preventDefault(); });
 $("#gridBody").addEventListener("dblclick", ev => { const tr = ev.target.closest("tr.op"); if (tr && !ev.target.closest("td.pt")) startEdit(Number(tr.dataset.id)); });
 
 async function togglePoint(id) {
@@ -243,12 +279,65 @@ async function togglePoint(id) {
     await Promise.all([loadAccounts(), loadPoints()]);
   } catch (e) { fail(e); }
 }
+async function pointSelected() {
+  const sel = selectedOps().filter(o => o.pointage !== "R");
+  if (!sel.length) { toast(S.selSet.size ? "Opérations déjà rapprochées" : "Sélectionnez d'abord une opération"); return; }
+  if (sel.length === 1 && S.selSet.size === 1) return togglePoint(sel[0].id);
+  const p = sel.some(o => o.pointage === "-") ? "P" : "-";
+  try {
+    const r = await api("POST", "/api/operations/bulk", { ids: sel.map(o => o.id), pointage: p });
+    toast(`${r.updated} opération${r.updated > 1 ? "s" : ""} ${p === "P" ? "pointée" : "dépointée"}${r.updated > 1 ? "s" : ""}`);
+    await refresh();
+  } catch (e) { fail(e); }
+}
 async function deleteSelected() {
+  const many = selectedOps();
+  if (many.length > 1) {
+    const tot = many.reduce((t, o) => t + o.amount, 0);
+    if (!(await confirmBox("Supprimer les opérations", `Supprimer les ${many.length} opérations sélectionnées (total ${eur(tot)}) ? Les virements correspondants sur les autres comptes seront aussi supprimés.`))) return;
+    try {
+      for (const o of many) { try { await api("DELETE", `/api/operations/${o.id}`); } catch (e) { if (!/introuvable/i.test(e.message)) throw e; } }
+      clearSel(); resetEntry(); toast(`${many.length} opérations supprimées`); await refresh();
+    } catch (e) { fail(e); await refresh(); }
+    return;
+  }
   const o = S.ops.find(x => x.id === S.sel); if (!o) { toast("Sélectionnez d'abord une opération"); return; }
   const ok = await confirmBox("Supprimer l'opération", `Supprimer « ${o.tiers || o.details || "sans libellé"} » du ${fmtDate(o.date)} (${eur(o.amount)}) ?${o.transfer_account ? " Le virement correspondant sur " + (acc(o.transfer_account) || {}).name + " sera aussi supprimé." : ""}`);
   if (!ok) return;
-  try { await api("DELETE", `/api/operations/${o.id}`); S.sel = null; if (S.edit === o.id) resetEntry(); toast("Opération supprimée"); await refresh(); } catch (e) { fail(e); }
+  try { await api("DELETE", `/api/operations/${o.id}`); clearSel(); if (S.edit === o.id) resetEntry(); toast("Opération supprimée"); await refresh(); } catch (e) { fail(e); }
 }
+
+/* ---------- changer la catégorie des opérations sélectionnées ---------- */
+function openMove() {
+  const sel = selectedOps();
+  if (!sel.length) { toast("Sélectionnez d'abord une ou plusieurs opérations (Ctrl+clic, Maj+clic)"); return; }
+  const tot = sel.reduce((t, o) => t + o.amount, 0);
+  $("#mvIntro").innerHTML = `<b>${sel.length}</b> opération${sel.length > 1 ? "s" : ""} sélectionnée${sel.length > 1 ? "s" : ""} · total <b class="num ${cls(tot)}">${eur(tot)}</b>`;
+  const cats = [...new Set(sel.map(o => o.category))], subs = [...new Set(sel.map(o => o.subcategory))];
+  $("#mvCat").value = cats.length === 1 ? cats[0] : ""; $("#mvSub").value = cats.length === 1 && subs.length === 1 ? subs[0] : "";
+  $("#mvNow").textContent = cats.length === 1 ? `Actuellement : ${cats[0] || "sans catégorie"}${cats[0] && subs.length === 1 && subs[0] ? " › " + subs[0] : subs.length > 1 ? " (plusieurs sous-catégories)" : ""}` : `Actuellement : ${cats.length} catégories différentes`;
+  fillSubs($("#mvCat").value); moveHint();
+  $("#dlgMove").showModal(); $("#mvCat").focus(); $("#mvCat").select();
+}
+function moveHint() {
+  const c = $("#mvCat").value.trim(), sc = $("#mvSub").value.trim();
+  $("#mvArch").hidden = !(c && isArchived(c, sc));
+}
+$("#mvCat").addEventListener("change", () => { fillSubs($("#mvCat").value); moveHint(); });
+$("#mvCat").addEventListener("input", moveHint);
+$("#mvSub").addEventListener("input", moveHint);
+$("#mvSub").addEventListener("focus", () => fillSubs($("#mvCat").value));
+$("#mvForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const c = $("#mvCat").value.trim(), sc = $("#mvSub").value.trim();
+  if (!c && sc) { toast("Indiquez la catégorie"); $("#mvCat").focus(); return; }
+  try {
+    const r = await api("POST", "/api/operations/bulk", { ids: [...S.selSet], category: c, subcategory: sc });
+    $("#dlgMove").close();
+    toast(`${r.updated} opération${r.updated > 1 ? "s" : ""} ${c ? "classée" + (r.updated > 1 ? "s" : "") + " dans « " + c + (sc ? " › " + sc : "") + " »" : "remise" + (r.updated > 1 ? "s" : "") + " à classer"}`);
+    await refresh({ lists: true });
+  } catch (e) { fail(e); }
+});
 
 /* ---------- saisie ---------- */
 function fillToSelect(sel, exclude, value) {
@@ -258,7 +347,7 @@ function fillToSelect(sel, exclude, value) {
 function resetEntry() {
   S.edit = null;
   $("#entry").reset(); $("#entry").classList.remove("editing");
-  $("#entryTitle").textContent = "Nouvelle opération";
+  $("#entryTitle").textContent = "Nouvelle opération"; entryLists(false);
   $("#fSubmit").textContent = "Ajouter";
   $("#fDate").value = todayIso();
   fillToSelect($("#fTo"), S.cur); $("#fTo").disabled = false;
@@ -270,7 +359,7 @@ function startEdit(id) {
   $$("#gridBody tr.editing").forEach(r => r.classList.remove("editing"));
   $(`#gridBody tr[data-id="${id}"]`)?.classList.add("editing");
   $("#entry").classList.add("editing");
-  $("#entryTitle").textContent = "Modifier l'opération du " + fmtDate(o.date);
+  $("#entryTitle").textContent = "Modifier l'opération du " + fmtDate(o.date); entryLists(true);
   $("#fSubmit").textContent = "Enregistrer";
   $("#fDate").value = o.date; $("#fMode").value = o.mode; $("#fTiers").value = o.tiers; $("#fDet").value = o.details;
   $("#fCat").value = o.category; $("#fSc").value = o.subcategory; fillSubs(o.category);
@@ -281,8 +370,7 @@ function startEdit(id) {
 $("#fTiers").addEventListener("change", () => {
   if (S.edit) return;
   const t = S.lists.tiers.find(x => norm(x.tiers) === norm($("#fTiers").value)); if (!t) return;
-  if (!$("#fCat").value) $("#fCat").value = t.category || "";
-  if (!$("#fSc").value) $("#fSc").value = t.subcategory || "";
+  if (!$("#fCat").value && t.category && !isArchived(t.category, t.subcategory)) { $("#fCat").value = t.category; if (!$("#fSc").value) $("#fSc").value = t.subcategory || ""; }
   if (!$("#fMode").value) $("#fMode").value = t.mode || "";
   fillSubs($("#fCat").value);
 });
@@ -319,7 +407,8 @@ function renderStatus() {
     `<span><i class="sw ok"></i>Pointé : <b class="num ${cls(a.pointed)}">${eur(a.pointed)}</b></span>` +
     `<span><i class="sw no"></i>${a.unpointed} non pointée${a.unpointed > 1 ? "s" : ""}</span>` +
     `<span>Prévu au ${fmtDate(a.cycle_end)}${a.cycle_day ? " (fin de cycle)" : ""} : <b class="num ${cls(a.forecast)}">${eur(a.forecast)}</b>${a.forecast_low < a.forecast ? ` · point bas <b class="num ${cls(a.forecast_low)}">${eur(a.forecast_low)}</b> le ${fmtDate(a.forecast_low_date).slice(0, 5)}` : ""}</span>` +
-    `<span>${S.ops.length} affichée${S.ops.length > 1 ? "s" : ""}</span>` +
+    (S.selSet.size > 1 ? `<span class="selinfo"><b>${S.selSet.size}</b> sélectionnées · total <b class="num ${cls(selectedOps().reduce((t, o) => t + o.amount, 0))}">${eur(selectedOps().reduce((t, o) => t + o.amount, 0))}</b></span>`
+      : `<span>${S.ops.length} affichée${S.ops.length > 1 ? "s" : ""}</span>`) +
     `<span class="grow"></span>` +
     (S.points.changes ? `<span class="unsaved">${S.points.changes} modification${S.points.changes > 1 ? "s" : ""} non sauvegardée${S.points.changes > 1 ? "s" : ""} · <button class="linkbtn" id="stRevert">Annuler</button></span>`
       : `<span class="saved">${S.points.last ? "Sauvegardé le " + fmtDate(S.points.last.slice(0, 10)) + " à " + S.points.last.slice(11, 16) : "Aucun point de sauvegarde"}</span>`);
@@ -529,7 +618,7 @@ async function renderClass() {
     (groups.length ? groups.map((g, i) => `<tr data-i="${i}">
       <td>${esc(g.tiers || "(sans tiers)")}</td>${accId ? "" : `<td>${esc(g.accounts)}</td>`}<td class="r">${g.n}</td>
       <td class="r num ${cls(g.total)}">${eur(g.total)}</td><td class="num">${fmtDate(g.last)}</td>
-      <td><input data-f="cat" list="dlCats" aria-label="Catégorie"></td><td><input data-f="sc" list="dlSubs" aria-label="Sous-catégorie"></td>
+      <td><input data-f="cat" list="dlCatsAll" aria-label="Catégorie"></td><td><input data-f="sc" list="dlSubsAll" aria-label="Sous-catégorie"></td>
       <td class="acts"><button class="btn mini primary" data-act="apply">Appliquer</button></td></tr>`).join("") :
       `<tr><td colspan="8" class="empty">Tout est classé.</td></tr>`) + "</tbody>";
   S.classGroups = groups;
@@ -628,18 +717,20 @@ function renderCats() {
   for (const [cat, subs] of groups) {
     const hit = !f || norm(cat).includes(f) || subs.some(x => norm(x.subcategory).includes(f));
     if (!hit) continue;
-    const ops = subs.reduce((s, x) => s + x.ops, 0), sch = subs.reduce((s, x) => s + x.sched, 0);
-    html += `<tr class="cat-h" data-cat="${esc(cat)}"><td><input data-f="cat" value="${esc(cat)}" aria-label="Nom de la catégorie"></td><td></td>
-      <td class="r cnt">${ops}</td><td class="r cnt">${sch}</td><td class="acts"><button class="btn mini" data-act="addsub">+ Sous-catégorie</button> <button class="btn mini danger" data-act="delcat">Supprimer</button></td></tr>`;
+    const ops = subs.reduce((s, x) => s + x.ops, 0), sch = subs.reduce((s, x) => s + x.sched, 0), ca = subs.some(x => x.cat_archived);
+    html += `<tr class="cat-h${ca ? " archived" : ""}" data-cat="${esc(cat)}"><td><input data-f="cat" value="${esc(cat)}" aria-label="Nom de la catégorie">${ca ? `<span class="tag-arch">archivée</span>` : ""}</td><td></td>
+      <td class="r cnt">${ops}</td><td class="r cnt">${sch}</td><td class="acts"><button class="btn mini" data-act="addsub">+ Sous-catégorie</button> <button class="btn mini" data-act="${ca ? "unarchcat" : "archcat"}" title="${ca ? "Proposer de nouveau cette catégorie à la saisie" : "Ne plus proposer cette catégorie à la saisie d'une nouvelle opération (elle reste utilisable)"}">${ca ? "Réactiver" : "Archiver"}</button> <button class="btn mini danger" data-act="delcat">Supprimer</button></td></tr>`;
     for (const x of subs.filter(x => x.subcategory && (!f || norm(cat).includes(f) || norm(x.subcategory).includes(f)))) {
       shown++;
-      html += `<tr data-cat="${esc(cat)}" data-sub="${esc(x.subcategory)}"><td class="sub-indent"><input data-f="sub" value="${esc(x.subcategory)}" aria-label="Nom de la sous-catégorie"></td>
+      const a = x.archived || ca;
+      html += `<tr class="${a ? "archived" : ""}" data-cat="${esc(cat)}" data-sub="${esc(x.subcategory)}"><td class="sub-indent"><input data-f="sub" value="${esc(x.subcategory)}" aria-label="Nom de la sous-catégorie">${x.archived ? `<span class="tag-arch">archivée</span>` : ""}</td>
         <td><select data-f="move" aria-label="Déplacer vers"><option value="">—</option>${catNames.filter(n => n !== cat).map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("")}</select></td>
-        <td class="r cnt">${x.ops}</td><td class="r cnt">${x.sched}</td><td class="acts"><button class="btn mini danger" data-act="delsub">Supprimer</button></td></tr>`;
+        <td class="r cnt">${x.ops}</td><td class="r cnt">${x.sched}</td><td class="acts">${ca ? "" : `<button class="btn mini" data-act="${x.archived ? "unarchsub" : "archsub"}" title="${x.archived ? "Proposer de nouveau cette sous-catégorie à la saisie" : "Ne plus proposer cette sous-catégorie à la saisie d'une nouvelle opération (elle reste utilisable)"}">${x.archived ? "Réactiver" : "Archiver"}</button> `}<button class="btn mini danger" data-act="delsub">Supprimer</button></td></tr>`;
     }
   }
   $("#catTable").innerHTML = html + "</tbody>";
-  $("#catIntro").textContent = `${catNames.length} catégories · ${CATS.filter(c => c.subcategory).length} sous-catégories`;
+  const nArch = new Set(CATS.filter(c => c.cat_archived).map(c => c.category)).size + CATS.filter(c => c.archived && !c.cat_archived).length;
+  $("#catIntro").textContent = `${catNames.length} catégories · ${CATS.filter(c => c.subcategory).length} sous-catégories${nArch ? ` · ${nArch} archivée${nArch > 1 ? "s" : ""}` : ""}`;
 }
 async function catAction(body, msg) {
   try { const r = await api("POST", "/api/categories/rename", body); toast(msg + (r.updated ? ` (${r.updated} ligne${r.updated > 1 ? "s" : ""} mise${r.updated > 1 ? "s" : ""} à jour)` : "")); await loadCats(); await refresh({ lists: true }); }
@@ -657,6 +748,15 @@ $("#catTable").addEventListener("click", async ev => {
   const act = ev.target.dataset.act, tr = ev.target.closest("tr[data-cat]"); if (!act || !tr) return;
   const cat = tr.dataset.cat, sub = tr.dataset.sub;
   if (act === "addsub") { $("#cnCat").value = cat; $("#cnSub").value = ""; $("#cnSub").focus(); return; }
+  if (/arch/.test(act)) {
+    const isCat = act.endsWith("cat"), on = !act.startsWith("un");
+    try {
+      await api("POST", "/api/categories/archive", { category: cat, subcategory: isCat ? null : sub, archived: on });
+      toast(`${isCat ? "Catégorie « " + cat : "Sous-catégorie « " + sub} » ${on ? "archivée : elle n'est plus proposée pour une nouvelle opération" : "réactivée"}`);
+      await loadCats(); await loadLists();
+    } catch (e) { fail(e); }
+    return;
+  }
   const n = CATS.filter(c => c.category === cat && (act === "delcat" || c.subcategory === sub)).reduce((s, c) => s + c.ops + c.sched, 0);
   const what = act === "delcat" ? `la catégorie « ${cat} » et ses sous-catégories` : `la sous-catégorie « ${sub} »`;
   if (!(await confirmBox("Supprimer", `Supprimer ${what} ?${n ? ` ${n} opération${n > 1 ? "s" : ""} ou échéance${n > 1 ? "s" : ""} ${act === "delcat" ? "redeviendront « à classer »" : "garderont seulement la catégorie « " + cat + " »"}.` : ""}`))) return;
@@ -867,7 +967,8 @@ function confirmBox(title, text) {
 $$("dialog [data-close]").forEach(b => b.addEventListener("click", () => b.closest("dialog").close()));
 $("#tbNew").addEventListener("click", () => { resetEntry(); $("#fDate").focus(); });
 $("#tbDel").addEventListener("click", deleteSelected);
-$("#tbPoint").addEventListener("click", () => S.sel ? togglePoint(S.sel) : toast("Sélectionnez d'abord une opération"));
+$("#tbPoint").addEventListener("click", pointSelected);
+$("#tbMove").addEventListener("click", openMove);
 $("#tbSave").addEventListener("click", saveNow);
 $("#tbCloud").addEventListener("click", cloudNow);
 $("#tbSched").addEventListener("click", openSched);
@@ -883,9 +984,11 @@ document.addEventListener("keydown", ev => {
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "n") { ev.preventDefault(); resetEntry(); $("#fDate").focus(); return; }
   if (ev.key === "Escape" && S.edit) { resetEntry(); return; }
   if (inField) return;
-  const ids = S.ops.map(o => o.id).reverse(), i = ids.indexOf(S.sel);
-  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); const j = i < 0 ? 0 : Math.max(0, Math.min(ids.length - 1, i + (ev.key === "ArrowDown" ? 1 : -1))); if (ids[j]) selRow(ids[j], true); }
-  else if (ev.key === " " && S.sel) { ev.preventDefault(); togglePoint(S.sel); }
+  if (ev.key === "Escape" && S.selSet.size > 1) { const k = S.sel; clearSel(); if (k) selRow(k); return; }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "a") { ev.preventDefault(); selectAll(); return; }
+  const ids = displayIds(), i = ids.indexOf(S.sel);
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); const j = i < 0 ? 0 : Math.max(0, Math.min(ids.length - 1, i + (ev.key === "ArrowDown" ? 1 : -1))); if (ids[j]) { if (ev.shiftKey && S.anchor == null) S.anchor = S.sel; selRow(ids[j], true, ev.shiftKey ? "range" : undefined); } }
+  else if (ev.key === " " && S.sel) { ev.preventDefault(); pointSelected(); }
   else if (ev.key === "Delete" && S.sel) { ev.preventDefault(); deleteSelected(); }
   else if (ev.key === "Enter" && S.sel) { ev.preventDefault(); startEdit(S.sel); }
 });

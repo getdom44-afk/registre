@@ -22,6 +22,7 @@
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/></symbol>
   <symbol id="i-fc" viewBox="0 0 24 24"><path d="M4 19h16"/><path d="M5 15l4-4 3 3 6-7"/><path d="M15 7h3v3"/><path d="M18 13v2.5M18 17.5v.5" class="d"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.4 1.4 0 0 1 0 2l-6.6 6.6a1.4 1.4 0 0 1-2 0z"/><circle cx="8" cy="8" r="1.6"/></symbol>
+  <symbol id="i-move" viewBox="0 0 24 24"><path d="M3 10.5V4a1 1 0 0 1 1-1h6.5l7 7a1.3 1.3 0 0 1 0 1.8l-1.3 1.3"/><circle cx="7" cy="7" r="1.4"/><path d="M11 17h10M17.5 13.5L21 17l-3.5 3.5"/></symbol>
   <symbol id="i-commit" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4z"/><path d="M8 4v5h7V4"/><path d="M8.5 15l2.3 2.3 4.7-4.8"/></symbol>
   <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7.5 9.2 4.7 4.7 0 0 0 7 18.5z"/><path d="M12 16.5v-6M9.5 13l2.5-2.5 2.5 2.5"/></symbol>
   <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 4H5v16h9"/><path d="M10 12h10M16.5 8.5L20 12l-3.5 3.5"/></symbol>
@@ -48,6 +49,7 @@
     <button class="tb" id="tbNew" title="Nouvelle opération (Ctrl+N)"><svg><use href="#i-new"/></svg><span>Nouvelle</span></button>
     <button class="tb" id="tbDel" title="Supprimer l'opération sélectionnée (Suppr)"><svg><use href="#i-del"/></svg><span>Supprimer</span></button>
     <button class="tb" id="tbPoint" title="Pointer / dépointer (Espace)"><svg><use href="#i-check"/></svg><span>Pointer</span></button>
+    <button class="tb" id="tbMove" title="Changer la catégorie / sous-catégorie des opérations sélectionnées (Ctrl+clic ou Maj+clic pour en sélectionner plusieurs)"><svg><use href="#i-move"/></svg><span>Catégorie…</span></button>
     <button class="tb" id="tbClass" title="Classer les opérations sans catégorie"><svg><use href="#i-tag"/></svg><span>Classer</span><b class="badge" id="classBadge" hidden></b></button>
     <span class="sep"></span>
     <button class="tb" id="tbSched" title="Échéancier : échéances à venir et à valider"><svg><use href="#i-cal"/></svg><span>Échéancier</span><b class="badge" id="dueBadge" hidden></b></button>
@@ -112,7 +114,7 @@
   </main>
 </div>
 
-<datalist id="dlModes"></datalist><datalist id="dlTiers"></datalist><datalist id="dlCats"></datalist><datalist id="dlSubs"></datalist>
+<datalist id="dlModes"></datalist><datalist id="dlTiers"></datalist><datalist id="dlCats"></datalist><datalist id="dlSubs"></datalist><datalist id="dlCatsAll"></datalist><datalist id="dlSubsAll"></datalist>
 
 <!-- Fenêtres -->
 <dialog id="dlgSched" class="win huge">
@@ -205,7 +207,7 @@
         <label class="fld"><span>Rechercher</span><input type="search" id="catSearch" placeholder="Catégorie ou sous-catégorie"></label>
         <span class="grow muted" id="catIntro"></span>
         <form id="catNewForm" class="row" autocomplete="off">
-          <label class="fld"><span>Catégorie</span><input id="cnCat" list="dlCats" required placeholder="Ex. Loisirs"></label>
+          <label class="fld"><span>Catégorie</span><input id="cnCat" list="dlCatsAll" required placeholder="Ex. Loisirs"></label>
           <label class="fld"><span>Sous-catégorie (facultatif)</span><input id="cnSub" placeholder="Ex. Cinéma"></label>
           <button class="btn">Ajouter</button>
         </form>
@@ -287,6 +289,21 @@
     <div class="tablewrap tall"><table class="list" id="classTable"></table></div>
     <p class="muted">La catégorie choisie s'applique à toutes les opérations sans catégorie de ce tiers, et sera reprise automatiquement aux prochains imports.</p>
   </div>
+</dialog>
+
+<dialog id="dlgMove" class="win">
+  <div class="win-title"><span>Changer la catégorie</span><button class="x" data-close aria-label="Fermer">×</button></div>
+  <form class="win-body" id="mvForm">
+    <p id="mvIntro"></p>
+    <p class="muted" id="mvNow"></p>
+    <div class="mv-grid">
+      <label class="fld"><span>Nouvelle catégorie</span><input id="mvCat" list="dlCatsAll" autocomplete="off"></label>
+      <label class="fld"><span>Sous-catégorie</span><input id="mvSub" list="dlSubsAll" autocomplete="off"></label>
+    </div>
+    <p class="muted" id="mvArch" hidden>Catégorie archivée : elle reste utilisable ici, mais n'est pas proposée pour une nouvelle opération.</p>
+    <p class="muted">Laissez la catégorie vide pour remettre ces opérations « à classer ».</p>
+    <div class="btns"><button class="btn primary" type="submit">Appliquer</button><button class="btn" type="button" data-close>Annuler</button></div>
+  </form>
 </dialog>
 
 <dialog id="dlgConfirm" class="win">

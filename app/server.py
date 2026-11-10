@@ -129,6 +129,8 @@ def migrate():
     if "ext_id" not in {r[1] for r in _conn.execute("PRAGMA table_info(operations)")}:
         _conn.execute("ALTER TABLE operations ADD COLUMN ext_id TEXT")
     _conn.execute("CREATE INDEX IF NOT EXISTS ix_ops_ext ON operations(ext_id)")
+    if "archived" not in {r[1] for r in _conn.execute("PRAGMA table_info(categories)")}:
+        _conn.execute("ALTER TABLE categories ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
     if not _conn.execute("SELECT 1 FROM families LIMIT 1").fetchone():
         for i, name in enumerate(FAMILIES):
             _conn.execute("INSERT INTO families(name, position) VALUES(?, ?)", (name, i))
@@ -544,6 +546,10 @@ def lists():
                      SELECT category, subcategory, COUNT(*) AS n FROM operations WHERE category <> '' GROUP BY category, subcategory
                      UNION ALL SELECT category, subcategory, 0 FROM categories WHERE category <> '')
                    GROUP BY category, subcategory ORDER BY category COLLATE NOCASE, subcategory COLLATE NOCASE""")
+    arch = archived_keys()
+    for c in cats:
+        c["cat_archived"] = 1 if (c["category"], "") in arch else 0
+        c["archived"] = 1 if c["cat_archived"] or (c["category"], c["subcategory"]) in arch else 0
     tiers = rows("""SELECT tiers, category, subcategory, mode, MAX(date) AS last FROM operations
                     WHERE tiers <> '' AND tiers NOT LIKE 'Transfert %' GROUP BY tiers ORDER BY last DESC LIMIT 1500""")
     modes = [r["mode"] for r in rows("SELECT mode, COUNT(*) n FROM operations WHERE mode <> '' AND mode NOT LIKE 'Chq %' GROUP BY mode ORDER BY n DESC LIMIT 20")]
@@ -1251,6 +1257,32 @@ def r_op_put(h, body, qs, op_id):
     return {"ok": True}
 
 
+@route("POST", "/api/operations/bulk")
+def r_op_bulk(h, body, qs):
+    """Modifie plusieurs opérations à la fois : catégorie / sous-catégorie et/ou pointage."""
+    ids = [int(i) for i in (body.get("ids") or [])]
+    if not ids:
+        raise ApiError(400, "Aucune opération sélectionnée")
+    d = {}
+    if "category" in body:
+        d["category"] = str(body.get("category") or "").strip()
+        d["subcategory"] = str(body.get("subcategory") or "").strip()
+    elif "subcategory" in body:
+        d["subcategory"] = str(body.get("subcategory") or "").strip()
+    if body.get("pointage") in ("P", "-"):
+        d["pointage"] = body["pointage"]
+    if not d:
+        raise ApiError(400, "Rien à modifier")
+    n = 0
+    with Tx():
+        for i in ids:
+            sql = "UPDATE operations SET " + ", ".join(k + " = ?" for k in d) + " WHERE id = ?"
+            if "pointage" in d:
+                sql += " AND pointage <> 'R'"
+            n += q(sql, list(d.values()) + [i]).rowcount
+    return {"updated": n}
+
+
 @route("DELETE", r"/api/operations/(\d+)")
 def r_op_del(h, body, qs, op_id):
     with Tx():
@@ -1260,13 +1292,32 @@ def r_op_del(h, body, qs, op_id):
 
 # ---------------------------------------------------------------- catégories
 
+def archived_keys():
+    """Couples (catégorie, sous-catégorie) archivés ; (catégorie, '') = toute la catégorie."""
+    return {(r["category"], r["subcategory"]) for r in rows("SELECT category, subcategory FROM categories WHERE archived = 1")}
+
+
 def category_tree():
-    """Catégories et sous-catégories utilisées (opérations, échéances) ou créées à l'avance, avec leurs effectifs."""
-    return rows("""SELECT category, subcategory, SUM(ops) AS ops, SUM(sched) AS sched FROM (
+    """Catégories et sous-catégories utilisées (opérations, échéances) ou créées à l'avance, avec leurs effectifs
+    et leur état d'archivage (archived : la ligne elle-même, cat_archived : la catégorie entière)."""
+    out = rows("""SELECT category, subcategory, SUM(ops) AS ops, SUM(sched) AS sched FROM (
                      SELECT category, subcategory, COUNT(*) AS ops, 0 AS sched FROM operations WHERE category <> '' GROUP BY category, subcategory
                      UNION ALL SELECT category, subcategory, 0, COUNT(*) FROM schedules WHERE category <> '' GROUP BY category, subcategory
                      UNION ALL SELECT category, subcategory, 0, 0 FROM categories WHERE category <> '')
                    GROUP BY category, subcategory ORDER BY category COLLATE NOCASE, subcategory COLLATE NOCASE""")
+    arch = archived_keys()
+    for r in out:
+        r["cat_archived"] = 1 if (r["category"], "") in arch else 0
+        r["archived"] = 1 if r["subcategory"] and (r["category"], r["subcategory"]) in arch else 0
+    return out
+
+
+def set_archived(cat, sub, flag):
+    cat, sub = str(cat or "").strip(), str(sub or "").strip()
+    if not cat:
+        raise ApiError(400, "Indiquez la catégorie")
+    q("""INSERT INTO categories(category, subcategory, archived) VALUES(?, ?, ?)
+         ON CONFLICT(category, subcategory) DO UPDATE SET archived = excluded.archived""", (cat, sub, 1 if flag else 0))
 
 
 def rename_category(cat, sub, new_cat, new_sub):
@@ -1283,12 +1334,17 @@ def rename_category(cat, sub, new_cat, new_sub):
             n += q("UPDATE %s SET category = ?, subcategory = ? WHERE category = ? AND subcategory = ?" % table,
                    (new_cat, str(new_sub or "").strip(), cat, str(sub).strip())).rowcount
     if sub is None:
-        for r in rows("SELECT subcategory FROM categories WHERE category = ?", (cat,)):
-            q("INSERT OR IGNORE INTO categories(category, subcategory) VALUES(?, ?)", (new_cat, r["subcategory"]))
-        q("DELETE FROM categories WHERE category = ?", (cat,))
+        if new_cat != cat:
+            for r in rows("SELECT subcategory, archived FROM categories WHERE category = ?", (cat,)):
+                q("INSERT OR IGNORE INTO categories(category, subcategory, archived) VALUES(?, ?, ?)", (new_cat, r["subcategory"], r["archived"]))
+            q("DELETE FROM categories WHERE category = ?", (cat,))
     else:
-        q("DELETE FROM categories WHERE category = ? AND subcategory = ?", (cat, str(sub).strip()))
-        q("INSERT OR IGNORE INTO categories(category, subcategory) VALUES(?, ?)", (new_cat, str(new_sub or "").strip()))
+        key, new_key = (cat, str(sub).strip()), (new_cat, str(new_sub or "").strip())
+        if key != new_key:
+            old = one("SELECT archived FROM categories WHERE category = ? AND subcategory = ?", key)
+            q("DELETE FROM categories WHERE category = ? AND subcategory = ?", key)
+            q("INSERT OR IGNORE INTO categories(category, subcategory, archived) VALUES(?, ?, ?)",
+              new_key + ((old["archived"] if old and new_key[1] else 0),))
     return n
 
 
@@ -1311,6 +1367,15 @@ def r_category_rename(h, body, qs):
     with Tx():
         n = rename_category(body.get("category"), body.get("subcategory"), body.get("new_category"), body.get("new_subcategory"))
     return {"updated": n}
+
+
+@route("POST", "/api/categories/archive")
+def r_category_archive(h, body, qs):
+    """Archive (ou réactive) une catégorie entière (subcategory absente) ou une sous-catégorie.
+    Archivée, elle n'est plus proposée à la saisie d'une nouvelle opération, mais reste utilisable."""
+    with Tx():
+        set_archived(body.get("category"), body.get("subcategory"), bool(body.get("archived", True)))
+    return {"ok": True}
 
 
 @route("POST", "/api/categories/delete")

@@ -1,5 +1,16 @@
 # Nouveautés
 
+## 1.3.0 — 10 novembre 2026
+
+- **Changer la catégorie de plusieurs opérations à la fois.** Sélectionnez-les, puis cliquez sur « Catégorie… » dans la barre d'outils. Indiquez la nouvelle catégorie et la sous-catégorie, puis « Appliquer ».
+- **Sélection multiple dans la liste** :
+  - Ctrl+clic ajoute ou retire une ligne ;
+  - Maj+clic (ou Maj+flèches) sélectionne une plage ;
+  - Ctrl+A sélectionne tout ;
+  - Échap revient à une seule ligne.
+  La barre d'état affiche le nombre de lignes sélectionnées et leur total. « Pointer » (ou Espace) et « Supprimer » agissent sur toute la sélection.
+- **Archiver une catégorie ou une sous-catégorie** (Paramètres › Catégories, bouton « Archiver »). Une catégorie archivée n'est plus proposée quand vous saisissez une nouvelle opération ou échéance. Elle reste utilisable pour modifier une opération, pour « Catégorie… » et pour « Classer ». « Réactiver » annule l'archivage.
+
 ## 1.2.0 — 10 novembre 2026
 
 - **Opérations les plus récentes en haut.** Les échéances à valider s'affichent au-dessus de la liste.
