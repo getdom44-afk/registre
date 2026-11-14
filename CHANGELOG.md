@@ -1,7 +1,8 @@
 # Nouveautés
 
-## 1.7.1 — 14 novembre 2026
+## 1.8.0 — 14 novembre 2026
 
+- **Modifications non sauvegardées : choix à la réouverture.** Si tu fermes Registre sans cliquer sur « Sauvegarder », la prochaine ouverture propose : **Sauvegarder**, **Annuler les modifications** (retour au dernier point de sauvegarde) ou **Plus tard**. Rien n'est annulé sans ton accord, y compris ce que Claude a ajouté via le connecteur.
 - **« Dupliquer » crée la copie tout de suite**, à la date du jour, sans passer par « Ajouter ». Fonctionne aussi avec plusieurs lignes sélectionnées (Ctrl+clic, Maj+clic) et avec les virements, recopiés sur les deux comptes. Une erreur ? « Supprimer » ou le bouton « Annuler » de la barre d'état.
 
 ## 1.7.0 — 14 novembre 2026

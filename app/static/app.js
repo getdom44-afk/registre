@@ -135,6 +135,27 @@ async function startApp() {
   await loadOps(true);
   resetEntry();
   if (!S.accounts.length) openImport();
+  else await askPending();
+}
+// À l'ouverture : des modifications n'avaient pas été sauvegardées lors de la session précédente.
+async function askPending() {
+  const n = S.points && S.points.changes, pt = S.points && S.points.points && S.points.points[0];
+  if (!n || !pt) return;
+  $("#pdText").textContent = `${n} modification${n > 1 ? "s" : ""} n'${n > 1 ? "ont" : "a"} pas été sauvegardée${n > 1 ? "s" : ""} depuis le ${fmtDate(pt.when.slice(0, 10))} à ${pt.when.slice(11, 16)}. ` +
+    "Les garder en créant un point de sauvegarde, ou les annuler pour revenir à ce point ?";
+  const choice = await new Promise(res => {
+    const d = $("#dlgPending"), done = v => { d.close(); res(v); };
+    $("#pdSave").onclick = () => done("save"); $("#pdRevert").onclick = () => done("revert"); $("#pdLater").onclick = () => done("later");
+    d.oncancel = () => done("later"); d.showModal(); $("#pdLater").focus();
+  });
+  if (choice === "save") await saveNow();
+  else if (choice === "revert") {
+    try {
+      await api("POST", "/api/points/revert", { name: pt.name });
+      toast("Modifications annulées : données revenues au " + fmtDate(pt.when.slice(0, 10)) + " à " + pt.when.slice(11, 16));
+      resetEntry(); await refresh({ lists: true, scrollEnd: true });
+    } catch (e) { fail(e); }
+  }
 }
 
 /* ---------- chargements ---------- */
