@@ -22,7 +22,9 @@ import threading
 import time
 import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+import urllib.error
+import urllib.request
+from urllib.parse import parse_qs, urlencode, urlparse
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 DB_PATH = os.path.join(DATA_DIR, "registre.db")
@@ -32,6 +34,15 @@ SESSION_DAYS = int(os.environ.get("SESSION_DAYS", "30"))
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "") == "1"
 COOKIE = "registre_session"
 APP_VERSION = os.environ.get("APP_VERSION", "dev")
+
+# Connexion par un fournisseur d'identité OpenID Connect (ex. Pocket ID de la passerelle), facultative
+OIDC_URL = os.environ.get("OIDC_URL", "").rstrip("/")                       # adresse vue par le navigateur
+OIDC_INTERNAL_URL = (os.environ.get("OIDC_INTERNAL_URL", "") or OIDC_URL).rstrip("/")   # adresse vue par le serveur
+OIDC_CLIENT_ID = os.environ.get("OIDC_CLIENT_ID", "")
+OIDC_CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET", "")
+OIDC_NAME = os.environ.get("OIDC_NAME", "Pocket ID")
+OIDC_ALLOWED = {x.strip().lower() for x in os.environ.get("OIDC_ALLOWED", "").split(",") if x.strip()}   # e-mails ou identifiants autorisés
+OIDC_ENABLED = bool(OIDC_URL and OIDC_CLIENT_ID and OIDC_CLIENT_SECRET and OIDC_ALLOWED)
 
 LOCK = threading.RLock()
 _conn = None
@@ -1144,7 +1155,7 @@ def mark_changed():
 @route("GET", "/api/auth", public=True)
 def r_auth(h, body, qs):
     return {"setup": setting("password") is None, "logged": session_ok(h.cookie()), "version": APP_VERSION,
-            "passkeys": one("SELECT COUNT(*) AS n FROM passkeys")["n"]}
+            "passkeys": one("SELECT COUNT(*) AS n FROM passkeys")["n"], "oidc": OIDC_NAME if OIDC_ENABLED else None}
 
 
 @route("POST", "/api/setup", public=True)
@@ -1470,6 +1481,76 @@ def r_passkey_login(h, body, qs):
     q("UPDATE passkeys SET sign_count = ?, last_used = ? WHERE id = ?", (count, dt.datetime.now().isoformat(timespec="seconds"), cred["id"]))
     h.set_cookie(new_session())
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- connexion OpenID Connect (Pocket ID…)
+
+_oidc_pending = {}   # state -> (code_verifier, redirect_uri, expiration)
+OIDC_COOKIE = "registre_oidc"
+
+
+def oidc_redirect_uri(h):
+    proto = "https" if (COOKIE_SECURE or h.headers.get("X-Forwarded-Proto") == "https") else "http"
+    return "%s://%s/api/oidc/callback" % (proto, h.headers.get("Host") or "localhost")
+
+
+def oidc_call(path, data=None, token=None):
+    req = urllib.request.Request(OIDC_INTERNAL_URL + path, data=urlencode(data).encode() if data else None)
+    if data:
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    if token:
+        req.add_header("Authorization", "Bearer " + token)
+    req.add_header("Accept", "application/json")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+@route("GET", "/api/oidc/start", public=True)
+def r_oidc_start(h, body, qs):
+    if not OIDC_ENABLED:
+        raise ApiError(404, "Connexion %s non configurée" % OIDC_NAME)
+    now = time.time()
+    for k in [k for k, v in _oidc_pending.items() if v[2] < now]:
+        del _oidc_pending[k]
+    if len(_oidc_pending) > 50:
+        _oidc_pending.clear()
+    state, verifier = secrets.token_urlsafe(24), secrets.token_urlsafe(48)
+    redirect_uri = oidc_redirect_uri(h)
+    _oidc_pending[state] = (verifier, redirect_uri, now + 600)
+    challenge = b64u(hashlib.sha256(verifier.encode()).digest())
+    secure = "; Secure" if redirect_uri.startswith("https") else ""
+    h._cookies.append("%s=%s; Path=/api/oidc; HttpOnly; SameSite=Lax%s; Max-Age=600" % (OIDC_COOKIE, state, secure))
+    h.redirect(OIDC_URL + "/authorize?" + urlencode({
+        "response_type": "code", "client_id": OIDC_CLIENT_ID, "redirect_uri": redirect_uri,
+        "scope": "openid email profile", "state": state,
+        "code_challenge": challenge, "code_challenge_method": "S256"}))
+
+
+@route("GET", "/api/oidc/callback", public=True)
+def r_oidc_callback(h, body, qs):
+    h._cookies.append("%s=; Path=/api/oidc; HttpOnly; SameSite=Lax; Max-Age=0" % OIDC_COOKIE)
+    state = qs.get("state") or ""
+    pending = _oidc_pending.pop(state, None)
+    if not OIDC_ENABLED or not pending or pending[2] < time.time() or h.cookie_named(OIDC_COOKIE) != state:
+        return h.redirect("/?oidc=expire")
+    if qs.get("error") or not qs.get("code"):
+        return h.redirect("/?oidc=annule")
+    verifier, redirect_uri, _ = pending
+    try:
+        tok = oidc_call("/api/oidc/token", {
+            "grant_type": "authorization_code", "code": qs["code"], "redirect_uri": redirect_uri,
+            "code_verifier": verifier, "client_id": OIDC_CLIENT_ID, "client_secret": OIDC_CLIENT_SECRET})
+        info = oidc_call("/api/oidc/userinfo", token=tok["access_token"])
+    except (urllib.error.URLError, KeyError, ValueError, OSError) as e:
+        print("Connexion %s impossible : %s" % (OIDC_NAME, e), flush=True)
+        return h.redirect("/?oidc=erreur")
+    who = {str(info.get(k) or "").lower() for k in ("email", "preferred_username", "sub")} - {""}
+    if not (who & OIDC_ALLOWED):
+        _failures.append(time.time())
+        print("Connexion %s refusée pour %s" % (OIDC_NAME, ", ".join(sorted(who))), flush=True)
+        return h.redirect("/?oidc=refuse")
+    h.set_cookie(new_session())
+    h.redirect("/")
 
 
 @route("GET", "/api/accounts")
@@ -1997,6 +2078,24 @@ class Handler(BaseHTTPRequestHandler):
             if k == COOKIE:
                 return v
         return None
+
+    def cookie_named(self, name):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == name:
+                return v
+        return None
+
+    def redirect(self, location):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        for c in self._cookies:
+            self.send_header("Set-Cookie", c)
+        self.security_headers()
+        self.end_headers()
+        self._sent = True
 
     def set_cookie(self, token, clear=False):
         secure = COOKIE_SECURE or self.headers.get("X-Forwarded-Proto") == "https"

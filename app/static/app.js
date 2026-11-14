@@ -79,8 +79,18 @@ function showLogin(setup) {
   $("#loginErr").hidden = true; $("#loginPw").value = ""; $("#loginPw2").value = "";
   setTimeout(() => $("#loginPw").focus(), 30);
   const pk = !setup && pkSupported() && S.auth && S.auth.passkeys > 0;
+  const oidc = !setup && S.auth && S.auth.oidc;
   $("#pkLoginRow").hidden = !pk;
-  if (pk && !S.pkTried) { S.pkTried = true; setTimeout(() => passkeyLogin(true), 150); }   // propose Windows Hello dès l'ouverture
+  $("#oidcRow").hidden = !oidc;
+  if (oidc) {
+    $("#oidcLabel").textContent = "Se connecter avec " + S.auth.oidc;
+    $("#loginIntro").textContent = "Connectez-vous avec votre passkey " + S.auth.oidc + ", ou avec le mot de passe de Registre.";
+    $("#loginBtn").classList.remove("primary");
+  }
+  const why = { refuse: "Ce compte " + (S.auth && S.auth.oidc) + " n'est pas autorisé à ouvrir Registre.", annule: "Connexion annulée.",
+    expire: "La demande de connexion a expiré. Réessayez.", erreur: "Le service de connexion ne répond pas. Utilisez le mot de passe ou la passkey Registre." }[new URLSearchParams(location.search).get("oidc")];
+  if (why) { $("#loginErr").textContent = why; $("#loginErr").hidden = false; history.replaceState(null, "", "/"); }
+  if (pk && !oidc && !S.pkTried) { S.pkTried = true; setTimeout(() => passkeyLogin(true), 150); }   // propose Windows Hello dès l'ouverture
 }
 
 /* ---------- passkeys (WebAuthn) ---------- */

@@ -191,6 +191,27 @@ Le HTTPS est assuré par la **passerelle** commune aux services du serveur (dép
 
 Derrière HTTPS, le cookie de session est automatiquement marqué « Secure ». Le HTTPS est aussi le prérequis des passkeys.
 
+### Se connecter avec la passkey de la passerelle (Pocket ID)
+
+Une seule passkey pour Registre et les autres services. Le mot de passe et la passkey Registre restent en secours.
+
+1. Dans Pocket ID (https://debian.home:5998) : **Administration › Clients OIDC › Ajouter un client OIDC**.
+   - **Nom** : `Registre` ; **Client confidentiel**.
+   - **URL de callback** : `https://debian.home:6001/api/oidc/callback`.
+   - **Créer**, puis copier l'**ID client** et le **secret client**.
+   - Onglet **Accès** : **Tous les utilisateurs**, puis **Enregistrer**.
+2. Sur le serveur, dans le dossier de Registre, créer le fichier `.env` (une valeur par question) :
+
+   ```
+   read -p "ID client : " CID
+   read -p "Secret client : " CSEC
+   read -p "E-mail Pocket ID autorisé : " MAIL
+   printf "OIDC_CLIENT_ID=%s\nOIDC_CLIENT_SECRET=%s\nOIDC_ALLOWED=%s\n" "$CID" "$CSEC" "$MAIL" > .env
+   chmod 600 .env
+   docker compose up -d
+   ```
+3. Ouvrir https://debian.home:6001 : le bouton **Se connecter avec Pocket ID** apparaît.
+
 ## 6. Utilisation au quotidien
 
 | Action | Comment |

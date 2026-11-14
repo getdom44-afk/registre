@@ -293,5 +293,7 @@ table.list tr.archived td.cnt { color: var(--muted); }
 .pk-login .or { text-align: center; color: var(--muted); font-size: 12px; }
 .pk-btn, #pkAdd { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .pk-btn svg, #pkAdd svg { width: 18px; height: 18px; }
+.oidc-login { margin: 0 0 12px; }
+.oidc-login a.btn { text-decoration: none; }
 .pk-add { display: flex; align-items: flex-end; gap: 8px; margin-top: 8px; }
 .pk-add .grow { flex: 1; }

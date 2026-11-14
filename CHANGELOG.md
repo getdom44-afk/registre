@@ -1,5 +1,12 @@
 # Nouveautés
 
+## 1.6.0 — 14 novembre 2026
+
+- **Connexion avec la passkey de la passerelle (Pocket ID).** Un bouton « Se connecter avec Pocket ID » ouvre Registre avec la même passkey que les autres services du serveur : une seule passkey pour tout.
+  - Seuls les comptes Pocket ID listés dans `OIDC_ALLOWED` peuvent ouvrir Registre.
+  - Le mot de passe et la passkey propres à Registre restent utilisables en secours, par exemple si la passerelle est arrêtée.
+  - Rien ne change tant que la connexion Pocket ID n'est pas configurée (voir le mode d'emploi).
+
 ## 1.5.0 — 10 novembre 2026
 
 - **Connexion par passkey.** Ouvre Registre avec Windows Hello (visage, empreinte ou code PIN) ou ton téléphone, sans taper de mot de passe.

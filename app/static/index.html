@@ -40,6 +40,10 @@
     <div class="win-title"><span>Registre</span></div>
     <div class="win-body">
       <p id="loginIntro">Entrez votre mot de passe pour ouvrir vos comptes.</p>
+      <div class="pk-login oidc-login" id="oidcRow" hidden>
+        <a class="btn primary pk-btn" id="oidcLogin" href="/api/oidc/start"><svg><use href="#i-key"/></svg><span id="oidcLabel">Se connecter avec Pocket ID</span></a>
+        <span class="or">ou</span>
+      </div>
       <label class="fld"><span>Mot de passe</span><input type="password" id="loginPw" autocomplete="current-password" required></label>
       <label class="fld" id="loginPw2Row" hidden><span>Confirmez le mot de passe</span><input type="password" id="loginPw2" autocomplete="new-password"></label>
       <p class="err" id="loginErr" hidden></p>
