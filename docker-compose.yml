@@ -20,6 +20,9 @@ services:
       # RESET_PASSWORD: "1"         # en cas d'oubli : efface le mot de passe au démarrage (puis remettez en commentaire)
     labels:
       com.centurylinklabs.watchtower.enable: "true"
+    networks:
+      - default
+      - passerelle                  # accès HTTPS par https://debian.home:6001 (dépôt Passerelle)
 
   # Envoi des sauvegardes vers OneDrive : toutes les heures, et aussitôt après le bouton « Sauvegarde Cloud »
   # (configuration rclone à faire une fois)
@@ -53,32 +56,6 @@ services:
           sleep 15
         done
 
-  # Accès en HTTPS : https://debian.home:6001 (certificat d'une autorité locale Caddy, à installer une fois sur le PC)
-  registre-https:
-    image: caddy:2.8
-    container_name: registre-https
-    restart: unless-stopped
-    ports:
-      - "6001:6001"
-    volumes:
-      - registre-https:/data        # autorité de certification locale et certificats
-    environment:
-      TZ: Europe/Paris
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        cat > /etc/caddy/Caddyfile <<'FIN'
-        {
-          local_certs
-          skip_install_trust
-          auto_https disable_redirects
-        }
-        debian.home:6001 {
-          reverse_proxy registre:8080
-        }
-        FIN
-        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
-
   # Mises à jour automatiques de Registre, chaque nuit à 4 h
   watchtower:
     image: nickfedor/watchtower:latest
@@ -96,4 +73,8 @@ services:
 volumes:
   registre-data:
   registre-sauvegardes:
-  registre-https:
+
+# Réseau de la passerelle HTTPS (dépôt getdom44-afk/Passerelle), à démarrer avant Registre
+networks:
+  passerelle:
+    external: true

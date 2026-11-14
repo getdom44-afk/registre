@@ -184,16 +184,10 @@ Quelques exemples de demandes :
 
 ## 5 bis. Accès en HTTPS (https://debian.home:6001)
 
-Le service `registre-https` (Caddy) sert Registre en HTTPS sur le port 6001. Le certificat est émis par une autorité de certification locale, créée au premier démarrage. Il faut l'installer **une fois** sur chaque PC, sinon le navigateur affiche un avertissement.
+Le HTTPS est assuré par la **passerelle** commune aux services du serveur (dépôt [Passerelle](https://github.com/getdom44-afk/Passerelle)) : elle sert Registre sur le port 6001, avec le certificat de l'autorité locale. Registre garde sa propre connexion (mot de passe ou passkey).
 
-1. Sur le serveur, récupérer le certificat de l'autorité :
-   `docker cp registre-https:/data/caddy/pki/authorities/local/root.crt ~/registre-ca.crt`
-2. Sur le PC Windows, dans PowerShell :
-   `scp olivier@192.168.1.4:registre-ca.crt $HOME\Downloads\`
-3. Double-cliquer sur `registre-ca.crt`, puis :
-   - « Installer le certificat » › « Ordinateur local » ;
-   - « Placer tous les certificats dans le magasin suivant » › « Autorités de certification racines de confiance ».
-4. Fermer complètement le navigateur, puis ouvrir https://debian.home:6001.
+- La passerelle doit être démarrée avant Registre : `docker-compose.yml` rejoint son réseau Docker `passerelle`.
+- Installation de la passerelle, migration depuis l'ancien service `registre-https` et installation du certificat sur un nouveau PC : voir le README de Passerelle.
 
 Derrière HTTPS, le cookie de session est automatiquement marqué « Secure ». Le HTTPS est aussi le prérequis des passkeys.
 
