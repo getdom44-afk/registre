@@ -8,7 +8,7 @@ Gestion de vos comptes bancaires, hébergée sur votre serveur Docker, dans l'es
   - Livrets : Livret A, Livret A - Tess, Livret A - Yona, LDDS.
 - **Échéancier** : vos opérations récurrentes vous sont proposées à la validation, et les virements entre comptes sont inscrits des deux côtés.
 - **Solde prévisionnel** à la date de votre choix, avec le point bas. Le CCP raisonne en cycle de salaire : sa fin de cycle est le 19.
-- **Revolut** : import des relevés CSV, sans doublons, puis classement des dépenses par commerçant.
+- **Revolut** : import des relevés CSV par Claude (connecteur MCP), sans doublons, puis classement des dépenses par commerçant.
 - **Pointage et rapprochement** avec vos relevés.
 - **Reprise de Bank Perfect** : vos comptes et votre échéancier.
 - **Sauvegarde quotidienne envoyée sur OneDrive.**
@@ -68,7 +68,7 @@ Si vous réimportez un fichier, les opérations déjà présentes sont ignorées
 Vos comptes Revolut Perso et Revolut Joint sont des porte-monnaie : pas d'échéancier, vous récupérez seulement les dépenses pour les classer.
 
 1. **Exportez le relevé** depuis l'app Revolut : ouvrez le compte, choisissez **Relevé**, format **Excel/CSV**, sur la période voulue.
-2. **Importez-le** : dans Registre, ouvrez **Paramètres**, onglet **Importer / Exporter**, puis **Importer des fichiers…**, rubrique **3. Revolut**. Choisissez le compte (Perso ou Joint), puis le fichier. À l'import :
+2. **Importez-le** : donnez le fichier à Claude (connecteur MCP, section 5) en lui demandant de l'importer sur Revolut Perso ou Revolut Joint. À l'import :
    - les opérations arrivent **déjà pointées**, puisqu'elles viennent de la banque ;
    - les doublons sont ignorés, même si deux relevés se chevauchent ;
    - les opérations en attente, annulées, ou passées par vos coffres d'épargne sont ignorées ;
@@ -80,7 +80,7 @@ Le filtre **Afficher : À classer** de la barre d'outils montre aussi ces opéra
 
 ## 4. Sauvegarde automatique sur OneDrive (une seule fois)
 
-Chaque jour, Registre fait une copie de ses données (les 30 dernières sont gardées). Le conteneur `registre-onedrive` les envoie toutes les heures dans votre OneDrive, dans le dossier `Sauvegardes/Registre`. Vous pouvez changer ce dossier avec la ligne `DEST` du fichier `docker-compose.yml`.
+Chaque jour, Registre fait une copie de ses données (les 10 dernières sont gardées). Le conteneur `registre-onedrive` les envoie toutes les heures dans votre OneDrive, dans le dossier `Sauvegardes/Registre`. Vous pouvez changer ce dossier avec la ligne `DEST` du fichier `docker-compose.yml`.
 
 Il faut autoriser l'accès à votre OneDrive une seule fois, avec l'outil gratuit **rclone**.
 

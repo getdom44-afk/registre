@@ -15,7 +15,7 @@ services:
     environment:
       TZ: Europe/Paris
       BACKUP_DIR: /backups
-      BACKUP_KEEP: "30"             # nombre de copies quotidiennes conservées
+      BACKUP_KEEP: "10"             # nombre de copies quotidiennes conservées
       # COOKIE_SECURE: "1"          # si l'application est servie en HTTPS (proxy inverse)
       # RESET_PASSWORD: "1"         # en cas d'oubli : efface le mot de passe au démarrage (puis remettez en commentaire)
       # Connexion par la passkey de la passerelle (Pocket ID). Valeurs dans le fichier .env, à côté de ce fichier.

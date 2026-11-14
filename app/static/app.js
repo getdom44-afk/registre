@@ -117,40 +117,6 @@ async function passkeyLogin(auto) {
   }
 }
 $("#pkLogin").addEventListener("click", () => passkeyLogin(false));
-async function loadPasskeys() {
-  const ok = pkSupported();
-  $("#pkForm").hidden = !ok;
-  $("#pkWarn").hidden = ok;
-  if (!ok) $("#pkWarn").textContent = "Pour ajouter une passkey, ouvrez Registre à l'adresse sécurisée https://debian.home:6001.";
-  let list = [];
-  try { list = await api("GET", "/api/passkeys"); } catch (e) { fail(e); }
-  const d = v => v ? fmtDate(v.slice(0, 10)) + " à " + v.slice(11, 16) : "jamais";
-  $("#pkTable").innerHTML = list.length ? `<thead><tr><th>Passkey</th><th>Ajoutée le</th><th>Dernière utilisation</th><th></th></tr></thead><tbody>` +
-    list.map(k => `<tr><td>${esc(k.name)}</td><td>${d(k.created)}</td><td>${d(k.last_used)}</td><td class="acts"><button class="btn mini danger" data-pk="${esc(k.id)}" data-name="${esc(k.name)}">Supprimer</button></td></tr>`).join("") + "</tbody>"
-    : `<tbody><tr><td class="empty">Aucune passkey pour l'instant.</td></tr></tbody>`;
-}
-$("#pkForm").addEventListener("submit", async ev => {
-  ev.preventDefault();
-  $("#pkAdd").disabled = true;
-  try {
-    const o = await api("POST", "/api/passkeys/options", {});
-    const cred = await navigator.credentials.create({ publicKey: {
-      challenge: b64uToBuf(o.challenge), rp: o.rp, user: Object.assign({}, o.user, { id: b64uToBuf(o.user.id) }),
-      pubKeyCredParams: o.pubKeyCredParams, authenticatorSelection: o.authenticatorSelection, attestation: o.attestation, timeout: o.timeout,
-      excludeCredentials: o.excludeCredentials.map(c => ({ type: c.type, id: b64uToBuf(c.id) }))
-    } });
-    await api("POST", "/api/passkeys", { name: $("#pkName").value, clientDataJSON: bufToB64u(cred.response.clientDataJSON), attestationObject: bufToB64u(cred.response.attestationObject) });
-    $("#pkName").value = ""; toast("Passkey ajoutée : vous pourrez l'utiliser à la prochaine connexion");
-    if (S.auth) S.auth.passkeys = (S.auth.passkeys || 0) + 1;
-    await loadPasskeys();
-  } catch (e) { toast(pkError(e)); }
-  finally { $("#pkAdd").disabled = false; }
-});
-$("#pkTable").addEventListener("click", async ev => {
-  const b = ev.target.closest("[data-pk]"); if (!b) return;
-  if (!(await confirmBox("Supprimer la passkey", `Supprimer « ${b.dataset.name} » ? Elle ne permettra plus d'ouvrir Registre. Pensez aussi à la retirer de l'appareil (Paramètres Windows › Comptes › Passkeys).`))) return;
-  try { await api("DELETE", "/api/passkeys/" + encodeURIComponent(b.dataset.pk)); toast("Passkey supprimée"); await loadPasskeys(); } catch (e) { fail(e); }
-});
 $("#loginForm").addEventListener("submit", async ev => {
   ev.preventDefault();
   const pw = $("#loginPw").value, err = $("#loginErr");
@@ -484,6 +450,17 @@ function startEdit(id) {
   fillToSelect($("#fTo"), S.cur, o.transfer_account || ""); $("#fTo").disabled = true;
   $("#fTiers").focus();
 }
+function duplicateSelected() {
+  const o = S.ops.find(x => x.id === S.sel); if (!o) { toast("Sélectionnez d'abord une opération"); return; }
+  resetEntry();
+  $("#entryTitle").textContent = "Copie de l'opération du " + fmtDate(o.date);
+  $("#fDate").value = todayIso(); $("#fMode").value = o.mode; $("#fTiers").value = o.tiers; $("#fDet").value = o.details;
+  $("#fCat").value = o.category; $("#fSc").value = o.subcategory; fillSubs(o.category);
+  $("#fDeb").value = o.amount < 0 ? plain(o.amount) : ""; $("#fCre").value = o.amount > 0 ? plain(o.amount) : "";
+  if (o.transfer_account) fillToSelect($("#fTo"), S.cur, o.transfer_account);
+  const f = o.amount < 0 ? $("#fDeb") : $("#fCre"); f.focus(); f.select();
+  toast("Copie prête à la date du jour : vérifiez puis « Ajouter »");
+}
 $("#fTiers").addEventListener("change", () => {
   if (S.edit) return;
   const t = S.lists.tiers.find(x => norm(x.tiers) === norm($("#fTiers").value)); if (!t) return;
@@ -716,29 +693,9 @@ $("#schedForm").addEventListener("submit", async ev => {
 /* ---------- import ---------- */
 let csvFiles = [], bpsData = null, bpsPreview = null;
 function openImport() {
-  $("#impCsvList").innerHTML = ""; $("#impBpsList").innerHTML = ""; $("#impRevRes").innerHTML = ""; $("#impCsv").value = ""; $("#impBps").value = ""; $("#impRev").value = "";
-  const revs = S.accounts.filter(a => norm(a.name).includes("revolut")), others = S.accounts.filter(a => !norm(a.name).includes("revolut"));
-  $("#impRevAcc").innerHTML = revs.concat(others).map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join("");
-  if (curAcc() && norm(curAcc().name).includes("revolut")) $("#impRevAcc").value = S.cur;
+  $("#impCsvList").innerHTML = ""; $("#impBpsList").innerHTML = ""; $("#impCsv").value = ""; $("#impBps").value = "";
   $("#dlgImport").showModal();
 }
-$("#impRev").addEventListener("change", async ev => {
-  const f = ev.target.files[0]; if (!f) return;
-  const out = $("#impRevRes"); out.innerHTML = `<p class="muted">Import en cours…</p>`;
-  try {
-    const r = await api("POST", "/api/import/revolut", { account_id: Number($("#impRevAcc").value), text: await decodeFile(f) });
-    const ok = r.bank_available === null || r.bank_available === r.balance;
-    out.innerHTML = `<p class="ok">${esc(r.account)} : ${r.added} opération${r.added > 1 ? "s" : ""} ajoutée${r.added > 1 ? "s" : ""}${r.duplicates ? `, ${r.duplicates} déjà présente${r.duplicates > 1 ? "s" : ""}` : ""}${r.classified ? `, dont ${r.classified} classée${r.classified > 1 ? "s" : ""} automatiquement` : ""}.</p>` +
-      (r.skipped ? `<p class="muted">${r.skipped} ligne${r.skipped > 1 ? "s" : ""} ignorée${r.skipped > 1 ? "s" : ""} (opérations annulées ou mouvements internes à vos Pockets).</p>` : "") +
-      (r.other_currencies.length ? `<p class="muted">Lignes en ${esc(r.other_currencies.join(", "))} ignorées : seul l'euro est repris.</p>` : "") +
-      (r.pending ? `<p class="muted">${r.pending} paiement${r.pending > 1 ? "s" : ""} en attente inscrit${r.pending > 1 ? "s" : ""} non pointé${r.pending > 1 ? "s" : ""}${r.finalised ? ` · ${r.finalised} paiement${r.finalised > 1 ? "s" : ""} finalisé${r.finalised > 1 ? "s" : ""}` : ""}${r.cancelled ? ` · ${r.cancelled} annulé${r.cancelled > 1 ? "s" : ""} et retiré${r.cancelled > 1 ? "s" : ""}` : ""}.</p>` : (r.finalised || r.cancelled ? `<p class="muted">${r.finalised} paiement(s) en attente finalisé(s), ${r.cancelled} annulé(s) et retiré(s).</p>` : "")) +
-      (r.bank_available !== null ? `<p class="${ok ? "ok" : "neg"}">Solde affiché par Revolut ${eur(r.bank_available)} · solde Registre ${eur(r.balance)}${ok ? " : concordants." : " : écart à vérifier."}</p>` : "") +
-      (r.to_classify ? `<div class="btns"><button class="btn primary" id="goClass">Classer ${r.to_classify} opération${r.to_classify > 1 ? "s" : ""}</button></div>` : "");
-    ev.target.value = ""; S.cur = Number($("#impRevAcc").value); await refresh({ lists: true, scrollEnd: true });
-  } catch (e) { out.innerHTML = `<p class="neg">${esc(e.message)}</p>`; ev.target.value = ""; }
-});
-$("#impRevRes").addEventListener("click", ev => { if (ev.target.id === "goClass") { $("#dlgImport").close(); openClass(); } });
-
 /* ---------- classement ---------- */
 function openClass() {
   $("#classAcc").innerHTML = `<option value="">Tous les comptes</option>` + S.accounts.map(a => `<option value="${a.id}">${esc(a.name)}${a.unclassified ? " (" + a.unclassified + ")" : ""}</option>`).join("");
@@ -832,7 +789,7 @@ $("#impBpsList").addEventListener("click", async ev => {
 let FAMS = [];
 async function openSettings(tab) {
   FAMS = await api("GET", "/api/families");
-  renderAccTable(); renderFams(); renderBackup(); renderPoints(); renderExport(); loadCats().catch(fail); loadPasskeys();
+  renderAccTable(); renderFams(); renderBackup(); renderPoints(); renderExport(); loadCats().catch(fail);
   $("#appVersion").textContent = "Registre, version " + (S.version || "?");
   $("#setHorizon").value = String(S.settings.horizon);
   showTab(typeof tab === "string" ? tab : "comptes");
@@ -1132,6 +1089,7 @@ function confirmBox(title, text) {
 /* ---------- barre d'outils et clavier ---------- */
 $$("dialog [data-close]").forEach(b => b.addEventListener("click", () => b.closest("dialog").close()));
 $("#tbNew").addEventListener("click", () => { resetEntry(); $("#fDate").focus(); });
+$("#tbDup").addEventListener("click", duplicateSelected);
 $("#tbDel").addEventListener("click", deleteSelected);
 $("#tbPoint").addEventListener("click", pointSelected);
 $("#tbMove").addEventListener("click", openMove);
@@ -1148,6 +1106,7 @@ document.addEventListener("keydown", ev => {
   if (document.querySelector("dialog[open]")) return;
   const inField = ev.target.closest("input, select, textarea");
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "n") { ev.preventDefault(); resetEntry(); $("#fDate").focus(); return; }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "d") { ev.preventDefault(); duplicateSelected(); return; }
   if (ev.key === "Escape" && S.edit) { resetEntry(); return; }
   if (inField) return;
   if (ev.key === "Escape" && S.selSet.size > 1) { const k = S.sel; clearSel(); if (k) selRow(k); return; }

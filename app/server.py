@@ -1068,7 +1068,7 @@ def backup_bytes():
 # ---------------------------------------------------------------- sauvegarde automatique
 
 BACKUP_DIR = os.environ.get("BACKUP_DIR", "")
-BACKUP_KEEP = int(os.environ.get("BACKUP_KEEP", "30"))
+BACKUP_KEEP = int(os.environ.get("BACKUP_KEEP", "10"))
 BACKUP_RE = re.compile(r"^registre-(\d{4}-\d{2}-\d{2})\.db$")
 
 
@@ -1934,7 +1934,7 @@ def r_export(h, body, qs, acc_id):
 
 
 POINTS_DIR = os.path.join(DATA_DIR, "points")
-POINTS_KEEP = int(os.environ.get("POINTS_KEEP", "50"))
+POINTS_KEEP = int(os.environ.get("POINTS_KEEP", "10"))
 POINT_RE = re.compile(r"^point-(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})(\d{2})\.db$")
 
 

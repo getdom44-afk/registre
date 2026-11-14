@@ -1,5 +1,12 @@
 # Nouveautés
 
+## 1.7.0 — 14 novembre 2026
+
+- **Dupliquer une opération.** Nouveau bouton « Dupliquer » dans la barre d'outils (ou Ctrl+D) : l'opération sélectionnée est recopiée dans la zone de saisie, **à la date du jour**. Ajustez si besoin, puis « Ajouter ».
+- **10 sauvegardes conservées** au lieu de 30 pour les copies quotidiennes (et sur OneDrive), et 10 points de sauvegarde au lieu de 50.
+- **Menu Passkeys retiré des Préférences.** La connexion se fait avec la passkey de la passerelle (Pocket ID) ; la passkey Registre déjà enregistrée et le mot de passe restent utilisables en secours.
+- **Import Revolut retiré de « Importer des relevés ».** Les relevés Revolut s'importent en les donnant à Claude (connecteur MCP).
+
 ## 1.6.0 — 14 novembre 2026
 
 - **Connexion avec la passkey de la passerelle (Pocket ID).** Un bouton « Se connecter avec Pocket ID » ouvre Registre avec la même passkey que les autres services du serveur : une seule passkey pour tout.

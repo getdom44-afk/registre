@@ -15,6 +15,7 @@
 <body>
 <svg class="sprite" aria-hidden="true">
   <symbol id="i-new" viewBox="0 0 24 24"><rect x="4" y="3" width="13" height="18" rx="1.5"/><path d="M8 8h5M8 12h5"/><circle cx="18" cy="17" r="4.2" class="f"/><path d="M18 15v4M16 17h4" class="w"/></symbol>
+  <symbol id="i-dup" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/><path d="M14 11.5v5M11.5 14h5"/></symbol>
   <symbol id="i-del" viewBox="0 0 24 24"><path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13"/><path d="M10.5 11v6M13.5 11v6"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M7.5 12.5l3 3 6-7"/></symbol>
   <symbol id="i-recon" viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5z"/><path d="M15 4v4h4"/><path d="M8.5 14l2.2 2.2L15.5 11"/></symbol>
@@ -61,6 +62,7 @@
   <header class="toolbar" role="toolbar" aria-label="Barre d'outils">
     <div class="brand">Registre</div>
     <button class="tb" id="tbNew" title="Nouvelle opération (Ctrl+N)"><svg><use href="#i-new"/></svg><span>Nouvelle</span></button>
+    <button class="tb" id="tbDup" title="Dupliquer l'opération sélectionnée à la date du jour (Ctrl+D)"><svg><use href="#i-dup"/></svg><span>Dupliquer</span></button>
     <button class="tb" id="tbDel" title="Supprimer l'opération sélectionnée (Suppr)"><svg><use href="#i-del"/></svg><span>Supprimer</span></button>
     <button class="tb" id="tbPoint" title="Pointer / dépointer (Espace)"><svg><use href="#i-check"/></svg><span>Pointer</span></button>
     <button class="tb" id="tbUnp" title="N'afficher que les lignes non pointées (cliquez de nouveau pour tout afficher)"><svg><use href="#i-unp"/></svg><span>Non pointées</span></button>
@@ -177,13 +179,6 @@
       <input type="file" id="impBps" accept=".bpsched">
       <div id="impBpsList"></div>
     </section>
-    <section>
-      <h2>3. Revolut (relevé CSV)</h2>
-      <p class="muted">Dans l'app Revolut : Compte, puis Relevé, format Excel/CSV. Les opérations arrivent pointées, sans doublons même si les périodes se chevauchent. La catégorie est reprise quand le commerçant est déjà connu ; le reste se range avec « Classer ».</p>
-      <label class="fld"><span>Compte Revolut</span><select id="impRevAcc"></select></label>
-      <input type="file" id="impRev" accept=".csv">
-      <div id="impRevRes"></div>
-    </section>
   </div>
 </dialog>
 
@@ -235,7 +230,7 @@
       <div class="cols">
         <section class="card">
           <h2>Importer</h2>
-          <p class="muted">Exports de Bank Perfect (comptes et échéancier) et relevés Revolut. Réimporter un fichier ne crée jamais de doublons.</p>
+          <p class="muted">Exports de Bank Perfect (comptes et échéancier). Réimporter un fichier ne crée jamais de doublons.</p>
           <div><button class="btn primary" id="openImport">Importer des fichiers…</button></div>
         </section>
         <section class="card">
@@ -269,16 +264,6 @@
           <h2>Échéances</h2>
           <label class="fld"><span>Proposer à la validation les échéances à venir dans les</span>
             <select id="setHorizon"><option value="0">échues seulement</option><option value="3">3 jours</option><option value="7">7 jours</option><option value="15">15 jours</option><option value="31">31 jours</option></select></label>
-        </section>
-        <section class="card">
-          <h2>Passkeys</h2>
-          <p class="muted" id="pkIntro">Connectez-vous avec Windows Hello (visage, empreinte ou code PIN) ou votre téléphone, sans taper de mot de passe. Le mot de passe reste utilisable en secours.</p>
-          <div class="tablewrap free"><table class="list" id="pkTable"></table></div>
-          <form id="pkForm" class="row pk-add" autocomplete="off">
-            <label class="fld grow"><span>Nom de la passkey</span><input id="pkName" placeholder="Ex. PC du salon (Windows Hello)" maxlength="60"></label>
-            <button class="btn primary" id="pkAdd"><svg><use href="#i-key"/></svg>Ajouter une passkey</button>
-          </form>
-          <p class="err" id="pkWarn" hidden></p>
         </section>
         <section class="card">
           <h2>Mot de passe</h2>
