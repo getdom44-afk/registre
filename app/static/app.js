@@ -450,16 +450,19 @@ function startEdit(id) {
   fillToSelect($("#fTo"), S.cur, o.transfer_account || ""); $("#fTo").disabled = true;
   $("#fTiers").focus();
 }
-function duplicateSelected() {
-  const o = S.ops.find(x => x.id === S.sel); if (!o) { toast("Sélectionnez d'abord une opération"); return; }
-  resetEntry();
-  $("#entryTitle").textContent = "Copie de l'opération du " + fmtDate(o.date);
-  $("#fDate").value = todayIso(); $("#fMode").value = o.mode; $("#fTiers").value = o.tiers; $("#fDet").value = o.details;
-  $("#fCat").value = o.category; $("#fSc").value = o.subcategory; fillSubs(o.category);
-  $("#fDeb").value = o.amount < 0 ? plain(o.amount) : ""; $("#fCre").value = o.amount > 0 ? plain(o.amount) : "";
-  if (o.transfer_account) fillToSelect($("#fTo"), S.cur, o.transfer_account);
-  const f = o.amount < 0 ? $("#fDeb") : $("#fCre"); f.focus(); f.select();
-  toast("Copie prête à la date du jour : vérifiez puis « Ajouter »");
+async function duplicateSelected() {
+  const sel = selectedOps().length ? selectedOps() : S.ops.filter(x => x.id === S.sel);
+  if (!sel.length) { toast("Sélectionnez d'abord une opération"); return; }
+  const today = todayIso(); let last = null;
+  try {
+    for (const o of sel) {
+      const r = await api("POST", `/api/accounts/${S.cur}/operations`, { date: today, mode: o.mode, tiers: o.tiers, details: o.details,
+        category: o.category, subcategory: o.subcategory, amount: o.amount, pointage: "-", to_account_id: o.transfer_account || null });
+      last = r.id;
+    }
+    toast(sel.length > 1 ? `${sel.length} opérations dupliquées au ${fmtDate(today)}` : `Opération dupliquée au ${fmtDate(today)}`);
+    clearSel(); await refresh({ lists: true }); if (last) selRow(last, true);
+  } catch (e) { fail(e); await refresh(); }
 }
 $("#fTiers").addEventListener("change", () => {
   if (S.edit) return;
