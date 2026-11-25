@@ -4,9 +4,13 @@ name: Publier une version
 # chaque fois que la branche « stable » avance (publication d'une version validée).
 # Numéro de version : fichier VERSION. L'image reçoit ce numéro et l'étiquette « stable »,
 # que le serveur utilise et que Watchtower installe la nuit.
+# Une fois par mois, l'image de la version publiée est aussi reconstruite telle quelle,
+# pour y intégrer les correctifs de sécurité de Debian et de Python (image de base).
 on:
   push:
     branches: ["stable"]
+  schedule:
+    - cron: "23 1 1 * *"        # le 1er du mois vers 2 h 23 (heure de Paris), avant le passage de Watchtower à 4 h
   workflow_dispatch:
 
 permissions:
@@ -18,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: stable                # toujours la version publiée, jamais un travail en cours sur main
 
       - name: Numéro de version
         id: v
@@ -39,6 +45,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          pull: true                 # image de base la plus récente (correctifs de sécurité)
           build-args: VERSION=${{ steps.v.outputs.version }}
           tags: |
             ${{ steps.v.outputs.image }}:${{ steps.v.outputs.version }}

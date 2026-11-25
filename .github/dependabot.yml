@@ -1,0 +1,17 @@
+# Dependabot : propose une mise à jour (pull request) quand une nouvelle version sort
+# de l'image de base Docker (python:3.12-slim) ou des actions GitHub utilisées pour publier.
+# Rien n'est installé tant que la mise à jour n'est pas acceptée puis publiée.
+version: 2
+updates:
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "Image de base"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "Actions GitHub"

@@ -15,5 +15,9 @@ Application personnelle de gestion de comptes (remplace Bank Perfect), auto-héb
 3. Mettre à jour `VERSION`, commit et push sur `main`, puis `git push origin main:stable` : l'image est construite par GitHub Actions et Watchtower l'installe la nuit suivante (sauvegarde automatique avant mise à niveau). Les étiquettes git ne peuvent pas être poussées depuis les sessions Claude.
 4. Ne publier qu'après validation par l'utilisateur.
 
+## Mises à jour de sécurité
+- `publier.yml` reconstruit aussi l'image de la branche `stable` le 1er de chaque mois (`pull: true`), pour intégrer les correctifs de l'image de base. Le numéro de version ne change pas.
+- `.github/dependabot.yml` propose chaque mois des pull requests pour `python:3.12-slim` et les actions GitHub. Pour en appliquer une : la fusionner dans `main`, vérifier, puis publier comme une version normale, après validation de l'utilisateur.
+
 ## Plan de comptes
 Défini dans `LAYOUT` / `FAMILIES` de `server.py`. CCP : fin de cycle le 19 (salaire le 20).
