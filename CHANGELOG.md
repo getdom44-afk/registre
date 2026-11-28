@@ -1,5 +1,10 @@
 # Nouveautés
 
+## 1.8.1 — 28 novembre 2026
+
+- **Dupliquer ouvre directement la copie en modification.** Quand tu dupliques une seule opération, la copie s'ouvre dans le formulaire du bas, déjà datée du jour. Modifie-la, puis clique sur « Enregistrer ». Quand tu en dupliques plusieurs, rien ne change.
+- **Une échéance validée est aussi pointée.** L'opération créée par « Valider » est cochée d'office, puisqu'elle a été constatée. Pour un virement, l'opération en face, sur l'autre compte, reste à pointer.
+
 ## 1.8.0 — 14 novembre 2026
 
 - **Modifications non sauvegardées : choix à la réouverture.** Si tu fermes Registre sans cliquer sur « Sauvegarder », la prochaine ouverture propose : **Sauvegarder**, **Annuler les modifications** (retour au dernier point de sauvegarde) ou **Plus tard**. Rien n'est annulé sans ton accord, y compris ce que Claude a ajouté via le connecteur.

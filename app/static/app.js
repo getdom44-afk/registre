@@ -481,8 +481,14 @@ async function duplicateSelected() {
         category: o.category, subcategory: o.subcategory, amount: o.amount, pointage: "-", to_account_id: o.transfer_account || null });
       last = r.id;
     }
-    toast(sel.length > 1 ? `${sel.length} opérations dupliquées au ${fmtDate(today)}` : `Opération dupliquée au ${fmtDate(today)}`);
-    clearSel(); await refresh({ lists: true }); if (last) selRow(last, true);
+    clearSel(); await refresh({ lists: true });
+    if (sel.length === 1 && last) {   // une seule copie : on l'ouvre directement en modification
+      selRow(last, true); startEdit(last);
+      toast(`Copie créée au ${fmtDate(today)} : modifiez-la puis cliquez sur Enregistrer`);
+    } else {
+      toast(`${sel.length} opérations dupliquées au ${fmtDate(today)}`);
+      if (last) selRow(last, true);
+    }
   } catch (e) { fail(e); await refresh(); }
 }
 $("#fTiers").addEventListener("change", () => {

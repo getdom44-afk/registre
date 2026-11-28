@@ -646,7 +646,7 @@ def validate_schedule(sid, d):
     if not s:
         raise ApiError(404, "Échéance introuvable")
     o = {"date": valid_date(d.get("date") or s["next_date"]), "mode": s["mode"], "tiers": s["tiers"], "details": s["details"],
-         "category": s["category"], "subcategory": s["subcategory"], "pointage": "-",
+         "category": s["category"], "subcategory": s["subcategory"], "pointage": "P",   # validée = constatée : pointée
          "amount": parse_amount(d["amount"]) if d.get("amount") not in (None, "") and not isinstance(d.get("amount"), int) else int(d.get("amount") or s["amount"])}
     with Tx():
         op_id = create_operation(s["account_id"], o, s["to_account_id"], schedule_id=sid)

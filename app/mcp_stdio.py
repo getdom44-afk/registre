@@ -322,7 +322,7 @@ TOOLS = [
        required=["id"])),
     ("pointer", t_pointer, True, "Pointe (P) ou dépointe (-) des opérations, par exemple après comparaison avec un relevé. Les opérations rapprochées (R) ne changent pas.",
      S(type="object", properties={"ids": {"type": "array", "items": {"type": "integer"}}, "etat": {"type": "string", "enum": ["P", "-"]}}, required=["ids"])),
-    ("valider_echeance", t_valider_echeance, True, "Valide une échéance : crée l'opération (date et montant ajustables) et passe l'échéance à sa prochaine date.",
+    ("valider_echeance", t_valider_echeance, True, "Valide une échéance : crée l'opération, déjà pointée (date et montant ajustables), et passe l'échéance à sa prochaine date.",
      S(type="object", properties={"id": {"type": "integer"}, "date": DATE, "montant": NUM}, required=["id"])),
     ("sauter_echeance", t_sauter_echeance, True, "Ignore l'occurrence en cours d'une échéance et la passe à sa prochaine date.",
      S(type="object", properties={"id": {"type": "integer"}}, required=["id"])),
